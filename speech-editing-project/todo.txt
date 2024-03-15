@@ -1,0 +1,18 @@
+# Можно взять предобученный TextEncoder из Vits и прикрутить декодер (и обучить это)
+# А можно взять (HuBERT + TextEncoder) из SoVits и дистиллировать в TextEncoder (loss навешать между ними)
+# и потом прикрутить decoder 
+# from transformers import AutoTokenizer, EncoderDecoderModel
+
+# Decoders:
+# https://github.com/voicepaw/so-vits-svc-fork/blob/main/src/so_vits_svc_fork/modules/decoders/f0.py#L7
+# https://github.com/jaywalnut310/vits/blob/main/attentions.py#L50
+
+# Encoders:
+# https://github.com/jaywalnut310/vits/blob/main/attentions.py#L13
+# https://github.com/jaywalnut310/vits/blob/main/models.py#L135
+# https://github.com/coqui-ai/TTS/blob/dev/TTS/tts/layers/vits/networks.py#L29 (coqui)
+
+# Векторное квантование 
+# https://www.assemblyai.com/blog/what-is-residual-vector-quantization/
+
+# TODO: Add proj layer for HuBERT
