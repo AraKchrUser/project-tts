@@ -12,7 +12,6 @@ from sklearn.cluster import MiniBatchKMeans, KMeans
 
 
 class CharClusters:
-    '''https://github.com/voicepaw/so-vits-svc-fork/blob/main/src/so_vits_svc_fork/cluster/__init__.py'''
     
     def __init__(self, checkpoint_path: Union[str, Path]):
         self.checkpoint_path = Path(checkpoint_path)
