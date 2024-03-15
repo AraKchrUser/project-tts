@@ -52,7 +52,7 @@ def _one_item_hubert_infer(file, hubert_model, hps): #TODO
     
     audio, sr = librosa.load(file, sr=hps["data_sr"], mono=True)
     audio     = torch.from_numpy(audio).float().to(hps["device"])
-    # https://github.com/voicepaw/so-vits-svc-fork/blob/main/src/so_vits_svc_fork/preprocessing/preprocess_hubert_f0.py#L65
+    
     content  = calc_hubert_content(hubert_model, audio, hps["device"], sr).to("cpu") #repeat_expand_2d, fixed len
     torch.cuda.empty_cache()
     hps["out_dir"] = Path(hps["out_dir"])
