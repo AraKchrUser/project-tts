@@ -1,5 +1,6 @@
 # .gitignore
 
+# find . | grep -E "(__pycache__|\.pyc$)" | xargs rm -rf
 # Pyhon byte-compiled / optimized files
 __pycache__/
 *.py[cod]

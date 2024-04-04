@@ -6,13 +6,15 @@ import librosa
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
 from torchaudio.transforms import Resample
 from transformers import HubertModel
+from TTS.tts.configs.vits_config import VitsConfig
+from TTS.tts.models.vits import Vits, VitsArgs, VitsAudioConfig
+from TTS.tts.utils.text.tokenizer import TTSTokenizer
 
 from cutils import get_dataset_from_dir
 from clustering import PseudoPhonemes
-# from TTS.tts.utils.text.tokenizer import TTSTokenizer
-# from TTS.tts.configs.vits_config import VitsConfig
 
 
 symbols_dict = {
@@ -22,11 +24,19 @@ symbols_dict = {
     "_letters_ipa" : "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ",
 }
 
-#TODO:
-# class CoquiTTSTokenizer:
-#     def __init__(self, config) -> None:
-#         tokenizer = TTSTokenizer.init_from_config(config)
-#         return tokenizer
+
+class CoquiTTSTokenizer:
+    
+    def __init__(self, config_path="ckpts/yourrtts_config.json") -> None:
+        config = VitsConfig()
+        config.load_json(file_name=config_path)
+        config["add_blank"] = False
+        tokenizer = TTSTokenizer.init_from_config(config)
+        self.tokenizer = tokenizer
+
+    @property
+    def get_tokenizer(self):  
+        return self.tokenizer[0]
 
 
 class GraphemeTTSTokenizer:
@@ -46,7 +56,7 @@ class GraphemeTTSTokenizer:
     
     def _build_vocab(self):
         
-        vocab = set(self.characters)
+        vocab = self.characters #set(self.characters)
         vocab = sorted(list(vocab))
         
         vocab = [self.blank] + vocab if self.blank is not None and len(self.blank) > 0 else vocab
@@ -113,7 +123,7 @@ class Text2PseudoPhonemes(Dataset):
 
     def __init__(self, texts_path: str, contents_path: str, clusters_path: str, 
                  pretrain_path: Optional[str]=None, lm_tokenizer: Optional[str]=None,
-                 config: Optional[Union[str, dict]]=symbols_dict, dsrate: int=16_000) -> None:
+                 config: Optional[Union[str, dict]]=None, dsrate: int=16_000, coquitokenizer: bool=True) -> None:
         super().__init__()
         
         self.texts    = sorted(get_dataset_from_dir(texts_path, "*.txt"))
@@ -132,6 +142,7 @@ class Text2PseudoPhonemes(Dataset):
         
         self.config_path = config
         self.lm_tokenizer = lm_tokenizer
+        self.use_coquitokenizer = coquitokenizer
         if config:
             self.__init_ttstokenizer(config)
             # self._symbol_to_id = {s: i for i, s in enumerate(self.symbols)}
@@ -139,6 +150,12 @@ class Text2PseudoPhonemes(Dataset):
             raise NotImplementedError()
         else:
             Exception()
+
+        gen_bos = self.pseudo_phonem_clusters.kmeans.cluster_centers_.shape[0]
+        self.gen_bos = gen_bos
+        self.gen_eos = gen_bos + 1
+        self.gen_pad = gen_bos + 2
+
         return 
     
     def __getitem__(self, index):
@@ -162,7 +179,10 @@ class Text2PseudoPhonemes(Dataset):
         #     contents = self.hubert(audio)
         #     contents = contents.last_hidden_state
 
-        y = []
+        # Была идея испольлзвать в качестве эмбеддингов для декодинга pseudo_ph_embeds (эмбеддинги центры кластеров)
+        # Но возникли трудности 
+        y = [self.gen_bos]
+        # pseudo_ph_embeds = []
         contents = torch.load(self.contents[index], weights_only=True)
         contents = contents["content"].squeeze(0).numpy()
         contents = contents.astype(np.float32)
@@ -170,8 +190,20 @@ class Text2PseudoPhonemes(Dataset):
             pseudo_ph = pseudo_ph.reshape(1, -1)
             pred_ph = self.pseudo_phonem_clusters.predict_cluster_center(pseudo_ph)
             y.append(pred_ph[0])
+            # pseudo_ph_embed = self.pseudo_phonem_clusters.get_cluster_center(pseudo_ph)
+            # pseudo_ph_embeds.append(torch.from_numpy(pseudo_ph_embed[0]))
+        y.append(self.gen_eos)
+        
+        # pseudo_ph_embed = torch.stack(pseudo_ph_embeds)
+        # print(pseudo_ph_embed.shape)
 
-        return {"tokens": x, "pseudo_ph": torch.LongTensor(y), "text": text, "decoded_tokens": self.decode(seq)}
+        return {
+            "tokens": x, 
+            "pseudo_ph": torch.LongTensor(y), 
+            "text": text, 
+            "decoded_tokens": self.decode(seq),
+            # "pseudo_ph_embeds": pseudo_ph_embed,
+            }
     
     def __len__(self):
         return len(self.texts)
@@ -189,7 +221,7 @@ class Text2PseudoPhonemes(Dataset):
         max_token_len = max([len(x) for x in batch['tokens']])
         tokens_padded = torch.LongTensor(B, max_token_len)
         tokens_padded = tokens_padded.zero_() + self.pad_id
-        for i in range(len(len(batch["tokens"]))):
+        for i in range(len(batch["tokens"])):
             token_ids = batch["tokens"][i]
             token_len = len(token_ids)
             tokens_padded[i,:token_len] = torch.LongTensor(token_ids)
@@ -197,24 +229,42 @@ class Text2PseudoPhonemes(Dataset):
         #TODO: if use eos/bos ?
         max_label_len = max([len(x) for x in batch['pseudo_ph']])
         lables_padded = torch.LongTensor(B, max_label_len)
-        end_token     = len(self.pseudo_phonem_clusters.cluster_centers_.shape[0])
-        lables_padded = lables_padded.zero_() + end_token
-        for i in range(len(len(batch["pseudo_ph"]))):
+        lables_padded = lables_padded.zero_() + self.gen_pad
+        for i in range(len(batch["pseudo_ph"])):
             label     = batch["pseudo_ph"][i]
             label_len = len(label)
             lables_padded[i,:label_len] = torch.LongTensor(label)
         
-        return {"tokens_padded": tokens_padded, "lables": lables_padded}
+        text_lens = torch.LongTensor(B)
+        for i in range(len(batch["text"])):
+            text         = batch["text"][i]
+            text_len     = len(text)
+            text_lens[i] = torch.LongTensor([text_len])
+        
+        # print(batch['pseudo_ph_embeds'])
+        # ph_embeds = []
+        # for i in range(len(batch['pseudo_ph_embeds'])):
+        #     ph_embed = batch["pseudo_ph_embeds"][i]
+        #     ph_embeds.append(ph_embed)
+        
+        # ph_embeds = pad_sequence(batch['pseudo_ph_embeds'], batch_first=True, padding_value=0) #tODO
+        
+        return {
+            "tokens_padded": tokens_padded, 
+            "lables": lables_padded, 
+            "text_lens": text_lens,
+            # "ph_embeds": ph_embeds,
+            }
 
     def encode(self, text, use_phonemes=False):
         if not use_phonemes:
-            token_ids = self.tokenizer.encode(text)
+            token_ids = self.tokenizer.text_to_ids(text) #encode(text)
             return token_ids # np.array(token_ids, dtype=np.int32)
         else:
             raise NotImplementedError()
     
     def decode(self, token_ids):
-        return self.tokenizer.decode(token_ids)
+        return self.tokenizer.ids_to_text(token_ids) #decode(token_ids)
     
     def __init_ttstokenizer(self, config):
         '''
@@ -227,22 +277,24 @@ class Text2PseudoPhonemes(Dataset):
             self.symbols = [_pad] + list(_punctuation) + list(_letters) # + list(_letters_ipa)
         '''
 
-        # TODO: 
-        # self.tokenizer = CoquiTTSTokenizer(VitsConfig.load_json(config))
+        if not self.use_coquitokenizer:
 
-        if isinstance(config, str):
-            with open(config, 'r') as f: #e.g. "YourTTS-RU-RUSLAN-April-30-2023_03+48PM-0000000/config.json"
-                data = json.load(f)
-            data = data['characters']
-            # self.symbols = [data["pad"]] + list(data["punctuations"]) + list(data["characters"]) + list(data["phonemes"]) + ["<BLNK>"]
-            config = data
+            if isinstance(config, str):
+                with open(config, 'r') as f: #e.g. "YourTTS-RU-RUSLAN-April-30-2023_03+48PM-0000000/config.json"
+                    data = json.load(f)
+                data = data['characters']
+                # self.symbols = [data["pad"]] + list(data["punctuations"]) + list(data["characters"]) + list(data["phonemes"]) + ["<BLNK>"]
+                config = data
 
-        # self.symbols = [config["_pad"]] + list(config["_punctuation"]) + list(config["_letters"]) + list(config["_letters_ipa"])
-        self.tokenizer = GraphemeTTSTokenizer(
-            characters=config["characters"], punctuations=config["punctuations"], 
-            pad=config["pad"], eos=config["eos"], bos=config["bos"], blank=config["blank"]
-            )
+            # self.symbols = [config["_pad"]] + list(config["_punctuation"]) + list(config["_letters"]) + list(config["_letters_ipa"])
+            self.tokenizer = GraphemeTTSTokenizer(
+                characters=config["characters"], punctuations=config["punctuations"], 
+                pad=config["pad"], eos=config["eos"], bos=config["bos"], blank=config["blank"]
+                )
+        
+        else:
+            self.tokenizer = CoquiTTSTokenizer(config).get_tokenizer
+
         self.pad_id = self.tokenizer.pad_id
-
         return 
     

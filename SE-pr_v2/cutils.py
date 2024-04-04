@@ -7,8 +7,8 @@ import random
 import numpy as np
 import torch
 import gc
-from directory_tree import display_tree
-import wget
+# from directory_tree import display_tree
+# import wget
 
 
 def wip_memory(model):
@@ -78,7 +78,8 @@ def create_chunk_dataset(
             shutil.copy(src_file, Path(dist_file))
     
     if display:
-        display_tree(out_path.as_posix())
+        # display_tree(out_path.as_posix())
+        pass
 
     return
 
@@ -100,7 +101,8 @@ def load_checkpoint(model: Any, ckpt_path: Union[str, Path], mname: str, downloa
         if not ckpt_path.parent.exists():
             ckpt_path.parent.mkdir(exist_ok=True, parents=True)
         for url in urls:
-            wget.download(url, out=ckpt_path.parent)
+            # wget.download(url, out=ckpt_path.parent)
+            pass
     
     with ckpt_path.open("rb") as f:
         ckpt_dict = torch.load(f, map_location="cpu", weights_only=True)
@@ -115,4 +117,4 @@ def load_checkpoint(model: Any, ckpt_path: Union[str, Path], mname: str, downloa
         new_state_dict[k] = ckpt_dict[k]
     model.load_state_dict(new_state_dict)
 
-    return model
+    return model, new_state_dict.keys()
