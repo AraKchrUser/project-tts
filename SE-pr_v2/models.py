@@ -129,6 +129,7 @@ class TransformerDecoder(Module):
                 dim_feedforward=dim_feedforward, dropout=dropout, 
             ), num_layers=num_layers,
         )
+        self.target_vocab_size = target_vocab_size
         self.generator = nn.Linear(emb_size, target_vocab_size)
         self.positional_encoding = PositionalEncoding(emb_size, dropout=dropout)
         self.ph_embedding = PseudoPhonemeEmbedding(target_vocab_size, emb_size)
@@ -145,7 +146,7 @@ class TransformerDecoder(Module):
                 nn.init.xavier_uniform_(p)
         
 
-    def forward(self, src_emb: Tensor, tgt: Tensor): #TODO: CHECKME
+    def forward(self, src_emb: Tensor, tgt: Tensor, lin_proj: bool=True): #TODO: CHECKME
         
         # src_emb = src_emb.permute((0, 2, 1))
         # src_emb = self.positional_encoding(src_emb)
@@ -154,9 +155,14 @@ class TransformerDecoder(Module):
         tgt_emb = self.ph_embedding(tgt)
         tgt_emb = self.positional_encoding(tgt_emb)
 
+        print(f"DEBUG: {src_emb.shape=} {tgt_emb.shape=}")
+
         #TODO: Add tgt mask (not padding)
         outs = self.decoder(tgt_emb, src_emb, tgt_key_padding_mask=tgt_mask)
-        return self.generator(outs)
+
+        if lin_proj:
+            return self.generator(outs)
+        return outs
     
 
 class Seq2Seq(Module):
@@ -179,8 +185,8 @@ class Seq2Seq(Module):
         enc_out = self.prior_encoder(tokens_padded, text_lens)[0]
         return enc_out
     
-    def only_decode(self, tgt, mem, mask=None):
-        dec_out = self.decoder.decoder(tgt, mem, mask) #TODO: CHECKME
+    def only_decode(self, tgt, mem):
+        dec_out = self.decoder(mem, tgt, False) #(tgt_emb, mem) #TODO: CHECKME
         return dec_out
 
 
@@ -243,3 +249,40 @@ class WhisperX(Module):
             x, self.device, return_char_alignments=False,
         )
         return x
+
+
+class SimpleSeq2SeqTransformer(Module):
+    
+    def __init__(self, num_enc: int, num_dec: int, emb_size: int, 
+                 nhead: int, src_vocab: int, tgt_vocab: int, dim_ff: int
+                 ):
+        super().__init__()
+
+        self.backbone = torch.nn.Transformer(
+            d_model=emb_size, nhead=nhead, num_encoder_layers=num_enc, 
+            num_decoder_layers=num_dec, dim_feedforward=dim_ff, dropout=.1,
+            )
+        self.gen = nn.Linear(emb_size, tgt_vocab)
+        self.src_emb = PseudoPhonemeEmbedding(src_vocab, emb_size)
+        self.tgt_emb = PseudoPhonemeEmbedding(tgt_vocab, emb_size)
+        self.pos_enc = PositionalEncoding(emb_size, dropout=.1)
+    
+    def forward(self, src: Tensor, tgt: Tensor, 
+                src_padding_mask, tgt_padding_mask): #TODO: Adding src_mask, tgt_mask
+        src_emb = self.pos_enc(self.src_emb(src))
+        tgt_emb = self.pos_enc(self.tgt_emb(tgt))
+        out = self.backbone(
+            src_emb, tgt_emb, None, None, None, 
+            src_padding_mask, tgt_padding_mask
+            )
+        out = self.gen(out)
+        return out
+    
+    def encode(self, src: Tensor, src_mask: Tensor=None):
+        return self.backbone.encoder(self.pos_enc(self.src_emb(src)), src_mask)
+    
+    def decode(self, tgt: Tensor, tgt_mask: Tensor=None):
+        return self.backbone.decoder(self.pos_enc(self.tgt_emb(tgt)), tgt_mask)
+    
+
+

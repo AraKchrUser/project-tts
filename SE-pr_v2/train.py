@@ -11,7 +11,7 @@ from torchaudio.transforms import Resample
 from transformers import HubertModel
 import whisperx
 
-from models import TextEncoder, TransformerDecoder, Seq2Seq, WhisperX
+from models import TextEncoder, TransformerDecoder, Seq2Seq, WhisperX, SimpleSeq2SeqTransformer
 from dataset import Text2PseudoPhonemes, CoquiTTSTokenizer
 from cutils import load_checkpoint, wip_memory
 
@@ -21,10 +21,11 @@ def path(_path):
 
 
 BATCH_SIZE = 32
-DEVICE     = "cuda" #"cpu"
+DEVICE     = "cpu" #"cuda"
 NUM_EPOCHS = 200
 HUBERT_SR  = 16_000
 HUBERT_PRETRAIN  = "/mnt/storage/kocharyan/hfmodels/content-vec-best" #"facebook/hubert-large-ls960-ft"
+MODEL_TYPE = 1
 
 
 
@@ -116,8 +117,8 @@ def calculate_wer_with_alignment(reference_text: str, recognized_text: str):
             }
 
 
-def train_epoch(model: Seq2Seq, optimizer: Any, 
-                loss_fn: Any, dataset: Dataset):
+def train_epoch(model: Union[Seq2Seq, SimpleSeq2SeqTransformer], 
+                optimizer: Any, loss_fn: Any, dataset: Dataset):
     model.train()
     losses = []
 
@@ -188,17 +189,29 @@ def train():
     #TODO: CHENGEME
     dataset = init_dataset()
 
-    prior_encoder = init_textencoder(dataset)
-    prior_encoder, _ = load_checkpoint(prior_encoder,
-                                "ckpts/yourtts_ruslan.pth", 
-                                "text_encoder", False)
-    for param in prior_encoder.parameters():
-        param.requires_grad = True
+    if MODEL_TYPE == 1:
+        prior_encoder = init_textencoder(dataset)
+        prior_encoder, _ = load_checkpoint(prior_encoder,
+                                    "ckpts/yourtts_ruslan.pth", 
+                                    "text_encoder", False)
+        for param in prior_encoder.parameters():
+            param.requires_grad = True
 
-    decoder = init_decoder(dataset)
+        decoder = init_decoder(dataset)
+        
+        model = Seq2Seq(prior_encoder, decoder)
+        model = model.to(DEVICE)
     
-    model = Seq2Seq(prior_encoder, decoder)
-    model.to(DEVICE)
+    elif MODEL_TYPE == 2:
+        num_enc = 3
+        num_dec = 2
+        emb_size = 128
+        nhead = 1
+        src_vocab = None #TODO: dataset.tokenizer
+        tgt_vocab = dataset.gen_pad + 1 # TODO: Потом нужно маппить обратно
+        dim_ff = 256
+        model = SimpleSeq2SeqTransformer()
+        model = model.to(DEVICE)
     
     optimizer = torch.optim.Adam(
         model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9
@@ -225,7 +238,6 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     # 2) 
     # Все переводим в центроиды 
     # Потом выделяем слова, которые были заменены 
-    
 
     # get contents
     hubert = HubertModel.from_pretrained(HUBERT_PRETRAIN).to(DEVICE)
@@ -236,17 +248,17 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     if audio.ndim == 1: audio = audio.unsqueeze(0)
     with torch.no_grad():
         contents = hubert(audio).last_hidden_state
-    print("DEBUG", contents.shape)
+    print(f"DEBUG {contents.shape=}")
     torch.cuda.empty_cache()
     wip_memory(hubert)
 
     # get word timestamps
     audio  = WhisperX.load_audio(audio_f)
-    whisperx_model = WhisperX() 
+    whisperx_model = WhisperX()
     out = whisperx_model(audio)
     alignment = WhisperX.postprocess_out(out, by='words')
     timesteps = WhisperX.formed_timesteps(alignment)
-    print("DEBUG", timesteps)
+    print(f"DEBUG {timesteps=}")
 
     if src_text is None:
         src_text = out['segments'][0]['text']
@@ -274,31 +286,52 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
         model = Seq2Seq(encoder, decoder)
         model.load_state_dict(torch.load(model_p))
         model.eval()
-    preds = greedy_decoding(model, token_ids, text_len, len(token_ids) + 200, dataset.gen_bos, dataset.gen_eos)
-    preds = preds.cpu().numpy()[1:-1]
+        model.to(DEVICE)
+    preds = greedy_decoding(
+        model, torch.LongTensor([token_ids]).to(DEVICE), torch.LongTensor([text_len]).to(DEVICE), 
+        len(token_ids) + 200, 
+        dataset.gen_bos, dataset.gen_eos,
+        )
+    preds = preds.cpu().numpy()#[1:-1]
 
     # TODO: replace idx by embeds
     return preds
 
 
-def greedy_decoding(model, src, src_len, max_len, start_symbol, end_symbol):  #CHECK ME
+#CHECK ME ! Не работает - почему то выводит константное предсказание 
+def greedy_decoding(model, src, src_len, max_len, start_symbol, end_symbol):
+    
+    print(f"DEBUG: {model.decoder.target_vocab_size=}")
     memory = model.only_encode(src, src_len)
+    memory = memory.permute((0, 2, 1))
+    print(f"DEBUG: {memory.shape=}")
 
     # TODO: Gen subsequent_mask
     preds = torch.ones(1, 1) #tensor([[1.]])
     preds = preds.fill_(start_symbol).type(torch.long).to(DEVICE)
     for i in range(max_len-1):
-        memory.to(DEVICE)
-        out = model.only_decode(preds, memory) # tgt mask gen
-        # out = out.transpose(0, 1) #?
-        prob = model.decoder.generator(out[:,-1])
-        _, next_word = torch.max(prob, dim=1) #?
-        next_word = next_word.item()
+        print(f"DEBUG: {i=}")
+        memory = memory.to(DEVICE)
+        prob = model.only_decode(preds, memory) # tgt mask gen | prob = model.generator(out[:, -1])
+        print(f"DEBUG: {prob.shape=}")
+        # print(f"DEBUG: {prob[:, 0, :]=}")
+        prob = model.decoder.generator(prob[:, -1, :]) #[:, -1]
+        # out = out.permute((0, 2, 1)).squeeze() #?
+        # print(f"DEBUG: {out.shape=}")
+        # out = out[:,-1]
+        # print(f"DEBUG: {out.shape=}")
+        # prob = model.decoder.generator(out)
+        # print(f"DEBUG: {out.shape=}")
+        _, next_symb = torch.max(prob, dim=-1) #? 
+        next_symb = next_symb.item()
+        print(f"DEBUG: {next_symb=}")
 
-        added = torch.ones(1, 1).type_as(src.data).fill_(next_word)
-        preds = torch.cat([preds, added], dim=0)
+        added = torch.ones(1, 1).type_as(src.data).fill_(next_symb)
+        preds = torch.cat([preds, added], dim=-1)
 
-        if next_word == end_symbol:
+        # print(preds)
+
+        if next_symb == end_symbol:
             break
     
     return preds
