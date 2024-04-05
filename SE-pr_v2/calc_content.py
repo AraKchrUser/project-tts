@@ -29,6 +29,7 @@ def calc_hubert_content(model: HubertModel,
 
 
 def _one_item_hubert_infer(file, hubert_model, hps):
+    '''Вычисление контент-векторов для файла и сохранение'''
     
     audio, sr = librosa.load(file, sr=hps["data_sr"], mono=True)
     audio     = torch.from_numpy(audio).float().to(hps["device"])
@@ -51,6 +52,7 @@ def _one_item_hubert_infer(file, hubert_model, hps):
 
 
 def _batch_hubert_infer(files, pbar, hps):
+    '''Вичисление контент векторов для N-файлов в одном запущенном потоке'''
     hubert_model = HubertModel.from_pretrained(hps["hmodel_id"]).to(hps["device"])
     for file in tqdm(files, position=pbar):
         _one_item_hubert_infer(file, hubert_model, hps)
@@ -59,7 +61,7 @@ def _batch_hubert_infer(files, pbar, hps):
 
 def create_hubert_content(data_dir: Union[str, Path] = "RuDevices", srate: int = 16_000, pretrain_path: str = "./",
                           out_dir: str = "./extracted_contents", device: str = "cuda", njobs: Optional[int] = 1) -> dict:
-    
+    '''Многопоточная обработка датасета - вычисляем контент-вектора и сохраняем'''
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

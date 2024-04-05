@@ -31,6 +31,7 @@ MODEL_TYPE = 1
 
 
 def calculate_wer_with_alignment(reference_text: str, recognized_text: str):
+    '''Функция вычисления замененных слов'''
     
     remove_punctuation = lambda string: ''.join(filter(lambda sym: sym not in punctuation, string.lower().strip())).split()
     reference_words = remove_punctuation(reference_text)
@@ -119,13 +120,14 @@ def calculate_wer_with_alignment(reference_text: str, recognized_text: str):
 
 def train_epoch(model: Union[Seq2Seq, SimpleSeq2SeqTransformer], 
                 optimizer: Any, loss_fn: Any, dataset: Dataset):
+    '''Одна эпоха обучения.'''
     model.train()
     losses = []
 
     dataset_loader = DataLoader(
         dataset, batch_size=BATCH_SIZE, collate_fn=dataset.collate_fn
         )
-    for batch in dataset_loader:
+    for batch in dataset_loader: #TODO: CHECKME
         
         tokens_padded = batch["tokens_padded"].to(DEVICE)
         text_lens     = batch["text_lens"].to(DEVICE)
@@ -210,8 +212,9 @@ def train():
         src_vocab = None #TODO: dataset.tokenizer
         tgt_vocab = dataset.gen_pad + 1 # TODO: Потом нужно маппить обратно
         dim_ff = 256
-        model = SimpleSeq2SeqTransformer()
-        model = model.to(DEVICE)
+        # model = SimpleSeq2SeqTransformer()
+        # model = model.to(DEVICE)
+        raise NotImplementedError()
     
     optimizer = torch.optim.Adam(
         model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9
@@ -233,11 +236,12 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     # Idea:
     # 1)
     # берем все слова которые были заменены
-    # считаем для них контент вектора
-    # через виспер заменяем их
+    # считаем для них центры - контент вектора
+    # через виспер определяем границы и заменяем их
     # 2) 
     # Все переводим в центроиды 
     # Потом выделяем слова, которые были заменены 
+    # Делаем патч
 
     # get contents
     hubert = HubertModel.from_pretrained(HUBERT_PRETRAIN).to(DEVICE)
@@ -261,6 +265,7 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     print(f"DEBUG {timesteps=}")
 
     if src_text is None:
+        # Если самомго эталонного текста нет
         src_text = out['segments'][0]['text']
     
     if dataset is None:
@@ -281,12 +286,15 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     text_len  = len(target_text)
 
     if isinstance(model, str):
+        # Инициализируем обученную модель из пути
         model_p = model
         encoder, decoder = init_textencoder(dataset), init_decoder(dataset)
         model = Seq2Seq(encoder, decoder)
         model.load_state_dict(torch.load(model_p))
         model.eval()
         model.to(DEVICE)
+    
+    # Декодируем
     preds = greedy_decoding(
         model, torch.LongTensor([token_ids]).to(DEVICE), torch.LongTensor([text_len]).to(DEVICE), 
         len(token_ids) + 200, 

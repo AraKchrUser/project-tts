@@ -14,6 +14,7 @@ from sklearn.cluster import MiniBatchKMeans, KMeans
 def incremental_clustering(input_path_dir: Union[Path, str], out_path_file: Union[Path, str], 
                              n_clusters: int = 250, batch_size: int = 4096, 
                              data_pattern: str = "*.content.pt") -> None:
+    '''Функция кластеризации по батчам. Файлы считываются с диска лениво, что должно работать эффективно по памяти'''
     input_path_dir = Path(input_path_dir)
     dataset = list(input_path_dir.rglob(data_pattern))
     
@@ -49,6 +50,7 @@ def incremental_clustering(input_path_dir: Union[Path, str], out_path_file: Unio
 
 
 class PseudoPhonemes:
+    '''Интерфейс для подрузки кластерной модели и получения предсказаний'''
     
     def __init__(self, checkpoint_path: Union[str, Path]):
         self.checkpoint_path = Path(checkpoint_path)

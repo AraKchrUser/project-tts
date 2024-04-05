@@ -10,7 +10,8 @@ from torch.nn import Module
 from torch import Tensor
 
 
-class TextDecoder(nn.Module):
+class TextDecoder(nn.Module): 
+    #TODO: Надо думать как использовать в авторегрессоном режиме. Но такой работает вроде в GPT-So-VITS
     '''
     decoder = TextDecoder()
     _, *forward_params, _ = prior_encoder(batch[0], batch[1])
@@ -45,6 +46,7 @@ class TextDecoder(nn.Module):
 
 
 class TextEncoder(Module):
+    # TODO: YourTTS TextEncoder
 
     def __init__(self, n_vocab, out_channels, hidden_channels, filter_channels, 
                  n_heads, n_layers, kernel_size, p_dropout):
@@ -192,6 +194,7 @@ class Seq2Seq(Module):
 
 
 class WhisperX(Module):
+    '''Интерфейс для работы с виспером'''
     
     def __init__(self, compute_type: str="float16", device: str="cuda", language: str="ru"):
         super().__init__()
@@ -251,7 +254,7 @@ class WhisperX(Module):
         return x
 
 
-class SimpleSeq2SeqTransformer(Module):
+class SimpleSeq2SeqTransformer(Module): #TODO: В крайнем случае можно использовать такую модель (без YourTTS) 
     
     def __init__(self, num_enc: int, num_dec: int, emb_size: int, 
                  nhead: int, src_vocab: int, tgt_vocab: int, dim_ff: int

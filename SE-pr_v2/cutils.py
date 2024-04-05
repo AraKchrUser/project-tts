@@ -53,6 +53,7 @@ def flatten(xss):
 def create_chunk_dataset(
         src_dataset: Union[Path, str]="RuDevices", k: int=2, 
         out_dataset: Union[Path, str]="rudevices_chunk", display: bool=False):
+    '''Берем k папок из датасета'''
     
     chunk_dirs = {}
     res_files = []
@@ -90,6 +91,7 @@ def download_hf_model(model_path, save_to):
 
 
 def load_checkpoint(model: Any, ckpt_path: Union[str, Path], mname: str, download: bool=False):
+    '''Инициализировать часть модели (mname) из ckpt_path  '''
     
     ckpt_path = Path(ckpt_path)
     

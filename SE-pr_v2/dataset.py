@@ -17,6 +17,13 @@ from cutils import get_dataset_from_dir
 from clustering import PseudoPhonemes
 
 
+# Можно посверяться с тем, что тут 
+# https://github.com/coqui-ai/TTS/blob/dev/recipes/vctk/yourtts/train_yourtts.py
+# https://github.com/coqui-ai/TTS/blob/dev/TTS/tts/models/vits.py#L302
+# https://github.com/coqui-ai/TTS/blob/dev/TTS/tts/utils/text/tokenizer.py#L10
+# https://pytorch.org/tutorials/beginner/translation_transformer.html
+
+
 symbols_dict = {
     "_pad" : '_',
     "_punctuation" : ' !+,-.:;?«»—',
@@ -41,7 +48,7 @@ class CoquiTTSTokenizer:
 
 class GraphemeTTSTokenizer:
     '''
-    Тут еще много доделывать, попробуем воспользоваться Tokenizer из coqui/TTS (CoquiTTSTokenizer, но там слишком много зависимостей)
+    Тут еще много доделывать, попробуем воспользоваться Tokenizer из coqui/TTS (CoquiTTSTokenizer)
     '''
     
     def __init__(self, characters: str=None, punctuations: str=None, pad: str=None, 
@@ -118,7 +125,10 @@ class Text2PseudoPhonemes(Dataset):
     '''
         Тут есть пару идей:
             1) Можно токенизировать в формате YourTTS и использовать TextEncoder для генерации последовательности псевдо-фонем
-            2) Можно просто токенизировать с помощью T5 и генерировать псевдо-фонемы (более унифицирваонный)
+            Так как модель уже видела графемы и умеет с ними работать (переводить в представление, из которого получаем спектрограмму)
+            то можно предположить, что ее легче можно обучать 
+            2) Можно просто токенизировать с помощью T5 и генерировать псевдо-фонемы - ЯМ модели очень устойчивы, 
+            так как обучаются в режиме SSL на больших объемах данных
     '''
 
     def __init__(self, texts_path: str, contents_path: str, clusters_path: str, 
@@ -209,10 +219,6 @@ class Text2PseudoPhonemes(Dataset):
         return len(self.texts)
 
     def collate_fn(self, batch):
-        # https://github.com/coqui-ai/TTS/blob/dev/recipes/vctk/yourtts/train_yourtts.py
-        # https://github.com/coqui-ai/TTS/blob/dev/TTS/tts/models/vits.py#L302
-        # https://github.com/coqui-ai/TTS/blob/dev/TTS/tts/utils/text/tokenizer.py#L10
-        # https://pytorch.org/tutorials/beginner/translation_transformer.html
         
         B = len(batch)
         batch = {k: [dic[k] for dic in batch] for k in batch[0]}

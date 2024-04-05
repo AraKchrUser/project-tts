@@ -13,13 +13,8 @@ from TTS.utils.downloaders import download_vctk
 
 torch.set_num_threads(24)
 
-# This recipe replicates the first experiment proposed in the YourTTS paper (https://arxiv.org/abs/2112.02418).
 CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
-
-# Name of the run for the Trainer
 RUN_NAME = "YourTTS-RU-RUSLAN"
-
-# Path where you want to save the models outputs (configs, checkpoints and tensorboard logs)
 OUT_PATH = os.path.dirname(os.path.abspath(__file__))
 
 # If you want to do transfer learning and speedup your training you can set here the path to the original YourTTS model
@@ -29,7 +24,6 @@ RESTORE_PATH = 'YourTTS-RU-RUSLAN-April-30-2023_12+59AM-0000000/best_model.pth'
 # This paramter is usefull to debug, it skips the training epochs and just do the evaluation  and produce the test sentences
 SKIP_TRAIN_EPOCH = False
 
-# Set here the batch size to be used in training and evaluation
 BATCH_SIZE = 32
 
 # Training Sampling rate and the target sampling rate for resampling the downloaded dataset (Note: If you change this you might need to redownload the dataset !!)
@@ -45,7 +39,6 @@ NUM_RESAMPLE_THREADS = 10
 
 # resample_files(input_dir=RUSLAN_DOWNLOAD_PATH, output_sr=SAMPLE_RATE, file_ext="wav", n_jobs=NUM_RESAMPLE_THREADS)
 
-# init configs
 dataset_config = BaseDatasetConfig(
     formatter="ruslan",
     dataset_name="ruslan",
@@ -92,7 +85,6 @@ for dataset_conf in DATASETS_CONFIG_LIST:
     D_VECTOR_FILES.append(embeddings_file)
 
 
-# Audio config used in training.
 audio_config = VitsAudioConfig(
     sample_rate=SAMPLE_RATE,
     hop_length=256,
@@ -103,7 +95,6 @@ audio_config = VitsAudioConfig(
     num_mels=80,
 )
 
-# Init VITSArgs setting the arguments that is needed for the YourTTS model
 model_args = VitsArgs(
     d_vector_file=D_VECTOR_FILES,
     use_d_vector_file=True,
@@ -119,7 +110,6 @@ model_args = VitsArgs(
     # embedded_language_dim=4,
 )
 
-# General training config, here you can change the batch size and others usefull parameters
 config = VitsConfig(
     output_path=OUT_PATH,
     model_args=model_args,
@@ -183,7 +173,6 @@ config = VitsConfig(
     speaker_encoder_loss_alpha=9.0,
 )
 
-# Load all the datasets samples and split traning and evaluation sets
 train_samples, eval_samples = load_tts_samples(
     config.datasets,
     eval_split=True,
@@ -191,10 +180,8 @@ train_samples, eval_samples = load_tts_samples(
     eval_split_size=config.eval_split_size,
 )
 
-# Init the model
 model = Vits.init_from_config(config)
 
-# Init the trainer and run trainings
 trainer = Trainer(
     TrainerArgs(restore_path=RESTORE_PATH, skip_train_epoch=SKIP_TRAIN_EPOCH),
     config,
