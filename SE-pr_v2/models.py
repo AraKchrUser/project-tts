@@ -262,21 +262,30 @@ class SimpleSeq2SeqTransformer(Module): #TODO: В крайнем случае м
         super().__init__()
 
         self.backbone = torch.nn.Transformer(
-            d_model=emb_size, nhead=nhead, num_encoder_layers=num_enc, 
+            d_model=emb_size, nhead=nhead, num_encoder_layers=num_enc, batch_first=True,
             num_decoder_layers=num_dec, dim_feedforward=dim_ff, dropout=.1,
             )
         self.gen = nn.Linear(emb_size, tgt_vocab)
         self.src_emb = PseudoPhonemeEmbedding(src_vocab, emb_size)
         self.tgt_emb = PseudoPhonemeEmbedding(tgt_vocab, emb_size)
         self.pos_enc = PositionalEncoding(emb_size, dropout=.1)
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
     
     def forward(self, src: Tensor, tgt: Tensor, 
-                src_padding_mask, tgt_padding_mask): #TODO: Adding src_mask, tgt_mask
+                src_padding_mask, tgt_padding_mask, 
+                src_mask, tgt_mask,
+                ): #TODO: Adding src_mask, tgt_mask
         src_emb = self.pos_enc(self.src_emb(src))
         tgt_emb = self.pos_enc(self.tgt_emb(tgt))
         out = self.backbone(
-            src_emb, tgt_emb, None, None, None, 
-            src_padding_mask, tgt_padding_mask
+            src=src_emb, tgt=tgt_emb, src_mask=src_mask, tgt_mask=tgt_mask, memory_mask=None, 
+            src_key_padding_mask=src_padding_mask, tgt_key_padding_mask=tgt_padding_mask,
             )
         out = self.gen(out)
         return out

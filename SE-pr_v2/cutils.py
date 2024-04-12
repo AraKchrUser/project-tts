@@ -35,6 +35,8 @@ def check_and_create_dir(dir: Path):
 def is_cyrillic(char):
     return 'CYRILLIC' in unicodedata.name(char) #TODO: Add space symb
 
+def exists_fileslist(fileslist: List[Union[str, Path]]):
+    return all([Path(f).exists() for f in fileslist])
 
 def del_folder(path):
     path = Path(path)

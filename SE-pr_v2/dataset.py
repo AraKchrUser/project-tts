@@ -13,7 +13,7 @@ from TTS.tts.configs.vits_config import VitsConfig
 from TTS.tts.models.vits import Vits, VitsArgs, VitsAudioConfig
 from TTS.tts.utils.text.tokenizer import TTSTokenizer
 
-from cutils import get_dataset_from_dir
+from cutils import get_dataset_from_dir, exists_fileslist
 from clustering import PseudoPhonemes
 
 
@@ -47,19 +47,17 @@ class CoquiTTSTokenizer:
 
 
 class GraphemeTTSTokenizer:
-    '''
-    Тут еще много доделывать, попробуем воспользоваться Tokenizer из coqui/TTS (CoquiTTSTokenizer)
-    '''
     
     def __init__(self, characters: str=None, punctuations: str=None, pad: str=None, 
-                 eos: str=None, bos: str=None, blank: str=None) -> None:
+                 eos: str=None, bos: str=None, blank: str=None, processor: Callable=None) -> None:
         self.characters   = characters
         self.punctuations = punctuations
-        self.pad          = pad
-        self.eos          = eos
-        self.bos          = bos
-        self.blank        = blank
+        self.pad          = pad # _
+        self.eos          = eos # *
+        self.bos          = bos # &
+        self.blank        = blank # None | Тут не используются 
         self._build_vocab()
+        self.processor = processor
     
     def _build_vocab(self):
         
@@ -67,8 +65,8 @@ class GraphemeTTSTokenizer:
         vocab = sorted(list(vocab))
         
         vocab = [self.blank] + vocab if self.blank is not None and len(self.blank) > 0 else vocab
-        vocab = [self.bos]   + vocab if self.bos   is not None and len(self.bos)   > 0 else vocab
         vocab = [self.eos]   + vocab if self.eos   is not None and len(self.eos)   > 0 else vocab
+        vocab = [self.bos]   + vocab if self.bos   is not None and len(self.bos)   > 0 else vocab
         vocab = [self.pad]   + vocab if self.pad   is not None and len(self.pad)   > 0 else vocab
         
         self.vocab = vocab + list(self.punctuations)
@@ -80,10 +78,22 @@ class GraphemeTTSTokenizer:
         #     print("Exception! ", duplicates)
         
         return 
+    
+    @staticmethod
+    def text_processor(text):
+        return text.lower()
 
     @property
     def pad_id(self):
         return self.char2id(self.pad)
+    
+    @property
+    def eos_id(self):
+        return self.char2id(self.eos)
+    
+    @property
+    def bos_id(self):
+        return self.char2id(self.bos)
 
     def char2id(self, char: str) -> int:
         try:
@@ -94,31 +104,165 @@ class GraphemeTTSTokenizer:
     def id2char(self, idx: int) -> str:
         return self._id2char[idx]
     
+    @property
     def size(self):
         return len(self.vocab)
 
     def encode(self, text: str):
         
-        #TODO: add text cleaned
+        if self.processor is not None:
+            text = self.processor(text)
 
-        token_ids = []
+        token_ids = [self.bos_id]
         for char in text:
             try:
                 idx = self.char2id(char)
                 token_ids.append(idx)
             except KeyError:
                 print("Check your vocab!")
-        
-        #TODO: add blank?
-        #TODO: use eos/bos ?
+        token_ids.append(self.eos_id)
 
         return token_ids
 
     def decode(self, token_ids: list):
         text = ""
         for token_id in token_ids:
-            text += self.id2char(token_id)
+            ch = self.id2char(token_id)
+            if ch in [self.pad, self.bos, self.eos]:
+                continue
+            text += ch
         return text
+
+
+
+class Text2SemanticCode(Dataset):
+
+    def __init__(self, texts_path: str, contents_path: str, clusters_path: str, 
+                 tokenizer_conf: Optional[Dict[str, str]], dsrate: int=16_000) -> None:
+        super().__init__()
+
+        self.texts = self._get_texts(texts_path)
+        assert exists_fileslist(self.texts)
+        print("Texts prepared!")
+        self.contents = self._get_contents(contents_path, texts_path)
+        assert exists_fileslist(self.contents)
+        print("Contents prepared!")
+
+        self.srate = dsrate
+
+        self.semantic_codes_clusters = PseudoPhonemes(clusters_path)
+        self.semantic_codes_clusters.build_clusters()
+        self.semantic_codes_clusters.on_labling_mode()
+
+        if tokenizer_conf is None:
+            tokenizer_conf = self.default_tokenizer_conf
+        self.text_tokenizer = GraphemeTTSTokenizer(
+            characters=tokenizer_conf["letters"], punctuations=tokenizer_conf["punctuation"], 
+            pad=tokenizer_conf["pad"], eos=tokenizer_conf['eos'], bos=tokenizer_conf["bos"], 
+            blank=None, processor=GraphemeTTSTokenizer.text_processor,
+        )
+
+        return
+    
+    def __len__(self):
+        return len(self.texts)
+    
+    def __getitem__(self, index):
+        
+        text = open(self.texts[index], "r").read().strip()
+        seq = self.tokenizer_encode(text)
+        x = torch.LongTensor(seq)
+
+        contents = torch.load(self.contents[index], weights_only=True)
+        contents = contents["content"].squeeze(0).numpy()
+        contents = contents.astype(np.float32)
+        labels = []
+        for semantic in contents:
+            semantic = semantic.reshape(1, -1)
+            pred_semantic = self.semantic_codes_clusters.predict_cluster_center(semantic)
+            labels.append(pred_semantic[0])
+        encoded_labels = self.semantic_codes_clusters.encode(labels)
+        y = torch.LongTensor(encoded_labels)
+
+        return {
+            "tokens": x,
+            "semantic": y,
+            "text": text,
+            "decoded_tokens": self.tokenizer_decode(seq),
+        }
+
+
+    def _get_texts(self, texts_path):
+        return sorted(get_dataset_from_dir(texts_path, "*.txt"))
+    
+    def _get_contents(self, contents_path, texts_path):
+        contents = [Path(file).relative_to(texts_path) for file in self.texts]
+        contents = [file.with_suffix(".wav.content.pt").as_posix() for file in contents]
+        contents = [".".join(file.split("/")) for file in contents]
+        return [(Path(contents_path) / file).as_posix() for file in contents]
+    
+    def tokenizer_encode(self, text, use_phonemes=False):
+        if not use_phonemes:
+            token_ids = self.text_tokenizer.encode(text)
+            return token_ids
+        raise NotImplementedError()
+    
+    def tokenizer_decode(self, token_ids):
+        return self.text_tokenizer.decode(token_ids)
+    
+    def collate_fn(self, batch, text_lens=None):
+
+        B = len(batch)
+        batch = {k: [dic[k] for dic in batch] for k in batch[0]}
+
+        t_pad_id = self.text_tokenizer.pad_id
+        max_token_len = max([len(x) for x in batch['tokens']])
+        tokens_padded = torch.LongTensor(B, max_token_len)
+        tokens_padded = tokens_padded.zero_() + t_pad_id
+        for i in range(len(batch["tokens"])):
+            token_ids = batch["tokens"][i]
+            token_len = len(token_ids)
+            tokens_padded[i,:token_len] = torch.LongTensor(token_ids)
+        
+        s_pad_id = self.semantic_codes_clusters.pad_id
+        max_label_len = max([len(x) for x in batch['semantic']])
+        lables_padded = torch.LongTensor(B, max_label_len)
+        lables_padded = lables_padded.zero_() + s_pad_id
+        for i in range(len(batch["semantic"])):
+            label     = batch["semantic"][i]
+            label_len = len(label)
+            lables_padded[i,:label_len] = torch.LongTensor(label)
+        
+        if text_lens is not None:
+            text_lens = torch.LongTensor(B)
+            for i in range(len(batch["text"])):
+                text         = batch["text"][i]
+                text_len     = len(text)
+                text_lens[i] = torch.LongTensor([text_len])
+        
+
+        return { #TODO: create_masks
+            "tokens_padded": tokens_padded, 
+            "lables": lables_padded, 
+            "text_lens": text_lens,
+            #TODO: create masks in train
+            # "src_padding_mask": tokens_padded == t_pad_id, # .transpose(0, 1) ?
+            # "tgt_padding_mask": lables_padded == s_pad_id,
+            # "src_mask": torch.zeros(()).type(torch.bool),
+            # "tgt_mask": ,
+        }
+
+    
+    @property
+    def default_tokenizer_conf(self):
+        return {
+            "pad" : '_',
+            "eos": "*",
+            "bos": "&",
+            "punctuation": ' !,-.?',
+            "letters": 'абвгдежзийклмнопрстуфхцчшщъыьэюяё',
+        }
+
 
 
 class Text2PseudoPhonemes(Dataset):

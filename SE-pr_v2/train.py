@@ -2,6 +2,7 @@ from typing import *
 from timeit import default_timer as timer
 from pathlib import Path
 from string import punctuation
+import enum
 
 import librosa
 import numpy as np
@@ -12,7 +13,7 @@ from transformers import HubertModel
 import whisperx
 
 from models import TextEncoder, TransformerDecoder, Seq2Seq, WhisperX, SimpleSeq2SeqTransformer
-from dataset import Text2PseudoPhonemes, CoquiTTSTokenizer
+from dataset import Text2PseudoPhonemes, CoquiTTSTokenizer, Text2SemanticCode
 from cutils import load_checkpoint, wip_memory
 
 
@@ -20,13 +21,20 @@ def path(_path):
     return "./examples/" / Path(_path)
 
 
+class Exp(enum.Enum):
+    '''Use: Exp.simple_transformer == EXP_CODE'''
+    yourtts_encoder = 1
+    simple_transformer = 2
+
+
+DATASET_SR = 16_000
 BATCH_SIZE = 32
-DEVICE     = "cpu" #"cuda"
+DEVICE     = "cuda" #"cpu"
 NUM_EPOCHS = 200
 HUBERT_SR  = 16_000
 HUBERT_PRETRAIN  = "/mnt/storage/kocharyan/hfmodels/content-vec-best" #"facebook/hubert-large-ls960-ft"
 MODEL_TYPE = 1
-
+EXP_CODE = 2
 
 
 
@@ -125,22 +133,45 @@ def train_epoch(model: Union[Seq2Seq, SimpleSeq2SeqTransformer],
     losses = []
 
     dataset_loader = DataLoader(
-        dataset, batch_size=BATCH_SIZE, collate_fn=dataset.collate_fn
+        dataset, batch_size=BATCH_SIZE, collate_fn=dataset.collate_fn,
         )
     for batch in dataset_loader: #TODO: CHECKME
         
-        tokens_padded = batch["tokens_padded"].to(DEVICE)
-        text_lens     = batch["text_lens"].to(DEVICE)
-        lables        = batch['lables'].to(DEVICE)
+        if EXP_CODE == Exp.yourtts_encoder:
+            tokens_padded = batch["tokens_padded"].to(DEVICE)
+            text_lens     = batch["text_lens"].to(DEVICE)
+            lables        = batch['lables'].to(DEVICE)
+            
+            #Тут не правильно
+            lables = lables[:, 1:].reshape(-1)
+            logits = model(tokens_padded, text_lens, lables[:, :-1])
+            logits = logits.reshape(-1, logits.shape[-1])
+        
+        if EXP_CODE == Exp.simple_transformer:
 
-        logits = model(tokens_padded, text_lens, lables[:, :-1])
+            def create_masks():
+                pass
+            
+            def create_padding():
+                pass
+            
+            tokens_padded = batch["tokens_padded"].to(DEVICE)
+            lables = batch['lables'].to(DEVICE)
+            
+            tgt_input = lables[:, :-1]
+            src_mask, tgt_mask = create_masks(tokens_padded, tgt_input)
+            src_padding_mask, tgt_padding_mask  = create_padding(tokens_padded, tgt_input)
+            logits = model(
+                src=tokens_padded, tgt=tgt_input, 
+                src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask, 
+                src_mask=src_mask, tgt_mask=tgt_mask,
+                )
+            logits = logits.reshape(-1, logits.shape[-1])
+            lables = lables[:, 1:].reshape(-1)
 
         optimizer.zero_grad()
         # print(lables.shape, lables[:, :-1].shape, lables[:, 1:].shape, logits.shape)
-        loss = loss_fn(
-            logits.reshape(-1, logits.shape[-1]), 
-            lables[:, 1:].reshape(-1)
-        )
+        loss = loss_fn(logits, lables)
         loss.backward()
         optimizer.step()
 
@@ -181,17 +212,23 @@ def init_decoder(dataset):
 
 
 def init_dataset():
-    return Text2PseudoPhonemes(
-        path("rudevices_chunk"), path("extracted_contents"), path("clusters/clusters.pt"), 
-        None, None, "ckpts/yourrtts_config.json",
-    )
+    if EXP_CODE == Exp.simple_transformer:
+        print("Text2SemanticCode dataset prepared")
+        return Text2SemanticCode(
+            texts_path=path("rudevices_chunk"), contents_path=path("extracted_contents"), 
+            clusters_path=path("clusters/clusters.pt"), tokenizer_conf=None, dsrate=DATASET_SR,
+        )
+    elif EXP_CODE == Exp.yourtts_encoder:
+        return Text2PseudoPhonemes(
+            path("rudevices_chunk"), path("extracted_contents"), path("clusters/clusters.pt"), 
+            None, None, "ckpts/yourrtts_config.json",
+        )
 
 def train():
 
-    #TODO: CHENGEME
     dataset = init_dataset()
 
-    if MODEL_TYPE == 1:
+    if EXP_CODE == Exp.yourtts_encoder:
         prior_encoder = init_textencoder(dataset)
         prior_encoder, _ = load_checkpoint(prior_encoder,
                                     "ckpts/yourtts_ruslan.pth", 
@@ -203,23 +240,31 @@ def train():
         
         model = Seq2Seq(prior_encoder, decoder)
         model = model.to(DEVICE)
+
+        pad = dataset.gen_pad
     
-    elif MODEL_TYPE == 2:
+    elif EXP_CODE == Exp.simple_transformer:
         num_enc = 3
         num_dec = 2
         emb_size = 128
-        nhead = 1
-        src_vocab = None #TODO: dataset.tokenizer
-        tgt_vocab = dataset.gen_pad + 1 # TODO: Потом нужно маппить обратно
+        nhead = 4
         dim_ff = 256
-        # model = SimpleSeq2SeqTransformer()
-        # model = model.to(DEVICE)
-        raise NotImplementedError()
+        src_vocab = dataset.text_tokenizer.size
+        tgt_vocab = dataset.semantic_codes_clusters.vocab_size
+        assert src_vocab == 42
+        assert tgt_vocab == 103
+        model = SimpleSeq2SeqTransformer(
+            num_enc=num_enc, num_dec=num_dec, emb_size=emb_size, nhead=nhead, dim_ff=dim_ff,
+            src_vocab=src_vocab, tgt_vocab=tgt_vocab,
+        )
+        model = model.to(DEVICE)
+        pad = dataset.semantic_codes_clusters.pad_id
+        print("SimpleSeq2SeqTransformer prepared")
     
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9
+        model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9,
         )
-    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=dataset.gen_pad) #TODO: PAD
+    loss_fn = torch.nn.CrossEntropyLoss(ignore_index=pad) #TODO: PAD
 
     losses = []
     for epoch in range(NUM_EPOCHS):
