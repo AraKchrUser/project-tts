@@ -312,8 +312,8 @@ def train():
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=pad) #TODO: PAD
 
     losses = []
+    start_time = timer()
     for epoch in range(NUM_EPOCHS):
-        start_time = timer()
         _losses = train_epoch(model, optimizer, loss_fn, dataset)
         end_time = timer()
         if epoch % 25 == 0:
@@ -440,9 +440,13 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
                     )
                 preds = preds.cpu().numpy()#[1:-1]
             all_preds[i] = {}
-            all_preds[i][f'tgt_preds ({tgt_words[i]})'] = tgt_words_preds
+            all_preds[i][f'tgt_preds ({tgt_words[i]})'] = dataset.semantic_codes_clusters.decode(tgt_words_preds)
+            centriods = []
+            for label in all_preds[i][f'tgt_preds ({tgt_words[i]})']:
+                centriods.append(dataset.semantic_codes_clusters.get_center_by_label(label))
+            all_preds[i]["tgt centriods"] = centriods
             all_preds[i][f'src_gt ({src_words[i]})']    = gt
-            all_preds[i][f'src_preds ({src_words[i]})'] = src_words_preds
+            all_preds[i][f'src_preds ({src_words[i]})'] = dataset.semantic_codes_clusters.decode(src_words_preds)
 
 
     CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
@@ -455,8 +459,13 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
         auto_predict_f0=True, f0_method="dio",
         device=DEVICE, noise_scale=.4,
         )
+    
+    # Для простоты:
+    all_preds[0]
     print("=====> SVCInfer works ...")
     infer_vc.inference(input_paths=INPUT, output_dir=OUT_DIR, speaker=None, )
+
+    print(all_preds)
 
     return all_preds
 
