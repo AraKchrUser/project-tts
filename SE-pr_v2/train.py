@@ -27,14 +27,20 @@ class Exp(enum.Enum):
     simple_transformer = 2
 
 
+LR = 0.0001
 DATASET_SR = 16_000
 BATCH_SIZE = 32
 DEVICE     = "cuda" #"cpu"
-NUM_EPOCHS = 200
+NUM_EPOCHS = 2_000
 HUBERT_SR  = 16_000
 HUBERT_PRETRAIN  = "/mnt/storage/kocharyan/hfmodels/content-vec-best" #"facebook/hubert-large-ls960-ft"
 MODEL_TYPE = 1
-EXP_CODE = 2
+EXP_CODE = Exp.simple_transformer
+
+if Exp.simple_transformer == EXP_CODE:
+    print("You run simple transformer exp")
+else:
+    print("You run yourtts-encoder exp")
 
 
 
@@ -126,6 +132,25 @@ def calculate_wer_with_alignment(reference_text: str, recognized_text: str):
             }
 
 
+def create_masks(src, tgt):
+    src_seq_len = src.shape[1]
+    src_mask = torch.zeros((src_seq_len, src_seq_len), device=DEVICE)
+    tgt_seq_len = tgt.shape[1]
+    tgt_mask = (torch.triu(
+        torch.ones((tgt_seq_len, tgt_seq_len), device=DEVICE)
+        ) == 1).float()
+    tgt_mask = tgt_mask.masked_fill(tgt_mask == 0, float('-inf'))
+    tgt_mask = tgt_mask.masked_fill(tgt_mask == 1, float(0.0))
+    return src_mask.type(torch.bool), tgt_mask.transpose(0,1)
+
+def create_padding(src, tgt, t_pad_id, s_pad_id):
+    # t_pad_id = dataset.text_tokenizer.pad_id
+    # s_pad_id = dataset.semantic_codes_clusters.pad_id
+    src_padding_mask = (src == t_pad_id)#.transpose(0,1)
+    tgt_padding_mask = (tgt == s_pad_id)#.transpose(0,1)
+    return src_padding_mask, tgt_padding_mask
+
+
 def train_epoch(model: Union[Seq2Seq, SimpleSeq2SeqTransformer], 
                 optimizer: Any, loss_fn: Any, dataset: Dataset):
     '''Одна эпоха обучения.'''
@@ -138,32 +163,42 @@ def train_epoch(model: Union[Seq2Seq, SimpleSeq2SeqTransformer],
     for batch in dataset_loader: #TODO: CHECKME
         
         if EXP_CODE == Exp.yourtts_encoder:
+            
             tokens_padded = batch["tokens_padded"].to(DEVICE)
             text_lens     = batch["text_lens"].to(DEVICE)
             lables        = batch['lables'].to(DEVICE)
             
-            #Тут не правильно
-            lables = lables[:, 1:].reshape(-1)
-            logits = model(tokens_padded, text_lens, lables[:, :-1])
+            #TODO: check model
+            tgt_input = lables[:, :-1]
+            _, tgt_mask = create_masks(tokens_padded, tgt_input)
+            # t_pad_id = s_pad_id = model.gen_pad
+            # src_padding_mask, tgt_padding_mask  = create_padding(
+            #     tokens_padded, tgt_input, 
+            #     t_pad_id, s_pad_id
+            #     )
+            logits = model(
+                tokens_padded=tokens_padded, text_lens=text_lens, 
+                lables=tgt_input, tgt_mask=tgt_mask,
+                )
             logits = logits.reshape(-1, logits.shape[-1])
+            lables = lables[:, 1:].reshape(-1)
         
         if EXP_CODE == Exp.simple_transformer:
-
-            def create_masks():
-                pass
-            
-            def create_padding():
-                pass
             
             tokens_padded = batch["tokens_padded"].to(DEVICE)
             lables = batch['lables'].to(DEVICE)
             
             tgt_input = lables[:, :-1]
             src_mask, tgt_mask = create_masks(tokens_padded, tgt_input)
-            src_padding_mask, tgt_padding_mask  = create_padding(tokens_padded, tgt_input)
+            t_pad_id = dataset.text_tokenizer.pad_id
+            s_pad_id = dataset.semantic_codes_clusters.pad_id
+            src_padding_mask, tgt_padding_mask  = create_padding(
+                tokens_padded, tgt_input, 
+                t_pad_id, s_pad_id,
+                )
             logits = model(
-                src=tokens_padded, tgt=tgt_input, 
-                src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask, 
+                src=tokens_padded, tgt=tgt_input,
+                src_padding_mask=src_padding_mask, tgt_padding_mask=tgt_padding_mask,
                 src_mask=src_mask, tgt_mask=tgt_mask,
                 )
             logits = logits.reshape(-1, logits.shape[-1])
@@ -205,6 +240,7 @@ def init_decoder(dataset):
     gen_pad        = dataset.gen_pad
     gen_bos        = dataset.gen_bos
     gen_eos        = dataset.gen_eos
+    assert tgt_vocab_size == 103
     return TransformerDecoder(
         num_layers, emb_size, dim_ff, nhead, tgt_vocab_size, 
         dropout, gen_pad, gen_bos, gen_eos
@@ -224,6 +260,26 @@ def init_dataset():
             None, None, "ckpts/yourrtts_config.json",
         )
 
+def init_simple_transformer(dataset):
+    num_enc = 3
+    num_dec = 3
+    emb_size = 128
+    nhead = 4
+    dim_ff = 256
+    src_vocab = dataset.text_tokenizer.size
+    tgt_vocab = dataset.semantic_codes_clusters.vocab_size
+    assert src_vocab == 42
+    assert tgt_vocab == 103
+    model = SimpleSeq2SeqTransformer(
+        num_enc=num_enc, num_dec=num_dec, emb_size=emb_size, nhead=nhead, dim_ff=dim_ff,
+        src_vocab=src_vocab, tgt_vocab=tgt_vocab,
+    )
+    model = model.to(DEVICE)
+    pad = dataset.semantic_codes_clusters.pad_id
+    eos = dataset.semantic_codes_clusters.eos_id
+    bos = dataset.semantic_codes_clusters.bos_id
+    return model, pad, eos, bos
+
 def train():
 
     dataset = init_dataset()
@@ -233,7 +289,7 @@ def train():
         prior_encoder, _ = load_checkpoint(prior_encoder,
                                     "ckpts/yourtts_ruslan.pth", 
                                     "text_encoder", False)
-        for param in prior_encoder.parameters():
+        for param in prior_encoder.parameters(): #TODO: CHANGEME
             param.requires_grad = True
 
         decoder = init_decoder(dataset)
@@ -242,27 +298,14 @@ def train():
         model = model.to(DEVICE)
 
         pad = dataset.gen_pad
+        print("YourTTS encoder prepared")
     
     elif EXP_CODE == Exp.simple_transformer:
-        num_enc = 3
-        num_dec = 2
-        emb_size = 128
-        nhead = 4
-        dim_ff = 256
-        src_vocab = dataset.text_tokenizer.size
-        tgt_vocab = dataset.semantic_codes_clusters.vocab_size
-        assert src_vocab == 42
-        assert tgt_vocab == 103
-        model = SimpleSeq2SeqTransformer(
-            num_enc=num_enc, num_dec=num_dec, emb_size=emb_size, nhead=nhead, dim_ff=dim_ff,
-            src_vocab=src_vocab, tgt_vocab=tgt_vocab,
-        )
-        model = model.to(DEVICE)
-        pad = dataset.semantic_codes_clusters.pad_id
+        model, pad, eos, bos = init_simple_transformer(dataset=dataset)
         print("SimpleSeq2SeqTransformer prepared")
     
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9,
+        model.parameters(), lr=LR, betas=(0.9, 0.98), eps=1e-9,
         )
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=pad) #TODO: PAD
 
@@ -271,7 +314,7 @@ def train():
         start_time = timer()
         _losses = train_epoch(model, optimizer, loss_fn, dataset)
         end_time = timer()
-        if epoch % 50 == 0:
+        if epoch % 25 == 0:
             print(f"Epoch: {epoch+1}, Train loss: {np.mean(_losses)}, Time: {(end_time - start_time)/60:.3f} min")
         losses.append(np.mean(_losses))
     
@@ -291,7 +334,7 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     # get contents
     hubert = HubertModel.from_pretrained(HUBERT_PRETRAIN).to(DEVICE)
     audio, sr = librosa.load(audio_f, mono=True)
-    audio     = torch.from_numpy(audio).float().to(DEVICE)
+    audio = torch.from_numpy(audio).float().to(DEVICE)
     if sr != HUBERT_SR:
             audio = Resample(sr, HUBERT_SR).to(audio.device)(audio).to(DEVICE)
     if audio.ndim == 1: audio = audio.unsqueeze(0)
@@ -317,37 +360,119 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
         dataset = init_dataset()
 
     #use wer for ali
+    all_preds = dict()
 
-    # wer_info = calculate_wer_with_alignment(src_text, target_text)
-    # ali       = wer_info["ali"][2]
-    # tgt_words = wer_info["recognized_words"]
-    # for i in range(len(ali)):
-    #     if not ali[i] == "S":
-    #         continue
+    wer_info = calculate_wer_with_alignment(src_text, target_text)
+    ali       = wer_info["ali"][2]
+    tgt_words = wer_info["recognized_words"]
+    src_words = wer_info["reference_words"]
+    for i in range(len(ali)):
+        if not ali[i] == "S":
+            continue
+        else:
+            target_text = tgt_words[i]
+
+            # preprocessing text ?
+            token_ids = dataset.tokenizer_encode(target_text)
+            print(target_text, ":", token_ids)
+            text_len  = len(target_text)
+
+            if isinstance(model, str):
+                if EXP_CODE == Exp.simple_transformer:
+                    model_p = model
+                    model, pad, eos, bos = init_simple_transformer(dataset=dataset)
+                    model.load_state_dict(torch.load(model_p))
+                    model.eval()
+                    model = model.to(DEVICE)
+                if EXP_CODE == Exp.yourtts_encoder:
+                    # Инициализируем обученную модель из пути
+                    model_p = model
+                    encoder, decoder = init_textencoder(dataset), init_decoder(dataset)
+                    model = Seq2Seq(encoder, decoder)
+                    model.load_state_dict(torch.load(model_p))
+                    model.eval()
+                    model = model.to(DEVICE)
+                    pad, eos, bos = dataset.gen_pad, dataset.gen_eos, dataset.gen_bos,
+            
+            # Декодируем
+            if EXP_CODE == Exp.simple_transformer:
+                
+                print(f"Decoding: {target_text=}")
+                num_tokens = len(token_ids)
+                token_ids = torch.LongTensor([token_ids])
+                print(f"{token_ids.shape=}, {num_tokens=}")
+                src_mask = (torch.zeros(num_tokens, num_tokens)).type(torch.bool)
+                tgt_words_preds = new_greedy_decoding(
+                    model, src=token_ids, src_mask=src_mask, pad_symbol=pad,
+                    max_len=len(token_ids)+20, start_symbol=bos, end_symbol=eos,
+                    ).cpu().numpy()
+                
+                ref_text = src_words[i]
+                print(f"Decoding: {ref_text=}")
+                ref_text = dataset.tokenizer_encode(ref_text)
+                num_tokens = len(ref_text)
+                src_mask = (torch.zeros(num_tokens, num_tokens)).type(torch.bool)
+                ref_text = torch.LongTensor([ref_text])
+                src_words_preds = new_greedy_decoding(
+                    model, src=ref_text, src_mask=src_mask, pad_symbol=pad,
+                    max_len=len(ref_text)+20, start_symbol=bos, end_symbol=eos,
+                    ).cpu().numpy()
+                
+
+                ref_text = timesteps[i][0]
+                ref_text_content = [*timesteps[i][1]]
+                print(f"Decoding: {ref_text=} (GT), range={timesteps[i][1]}")
+                gt = dataset.get_contents_centers(contents, ref_text_content)
+                gt = np.array(gt)
+                
+            if EXP_CODE == Exp.yourtts_encoder:
+                preds = greedy_decoding(
+                    model, torch.LongTensor([token_ids]).to(DEVICE), torch.LongTensor([text_len]).to(DEVICE), 
+                    len(token_ids) + 20, bos, eos,
+                    )
+                preds = preds.cpu().numpy()#[1:-1]
+            all_preds[i] = {}
+            all_preds[i][f'tgt_preds ({tgt_words[i]})'] = tgt_words_preds
+            all_preds[i][f'src_gt ({src_words[i]})']    = gt
+            all_preds[i][f'src_preds ({src_words[i]})'] = src_words_preds
+
+    # TODO: replace idx by embeds       
+    return all_preds
 
 
-    # preprocessing text ?
-    token_ids = dataset.encode(target_text)
-    text_len  = len(target_text)
+def new_greedy_decoding(model, src, src_mask, max_len, start_symbol, end_symbol, pad_symbol):
+    src = src.to(DEVICE)
+    src_mask = src_mask.to(DEVICE)
 
-    if isinstance(model, str):
-        # Инициализируем обученную модель из пути
-        model_p = model
-        encoder, decoder = init_textencoder(dataset), init_decoder(dataset)
-        model = Seq2Seq(encoder, decoder)
-        model.load_state_dict(torch.load(model_p))
-        model.eval()
-        model.to(DEVICE)
-    
-    # Декодируем
-    preds = greedy_decoding(
-        model, torch.LongTensor([token_ids]).to(DEVICE), torch.LongTensor([text_len]).to(DEVICE), 
-        len(token_ids) + 200, 
-        dataset.gen_bos, dataset.gen_eos,
-        )
-    preds = preds.cpu().numpy()#[1:-1]
+    mem = model.encode(src, src_mask)
+    preds = torch.ones(1, 1).fill_(start_symbol)
+    preds = preds.type(torch.long).to(DEVICE)
 
-    # TODO: replace idx by embeds
+    for i in range(max_len-1):
+        mem = mem.to(DEVICE)
+
+        tgt_seq_len = preds.shape[1]
+        tgt_mask = (torch.triu(
+            torch.ones((tgt_seq_len, tgt_seq_len), device=DEVICE)
+            ) == 1).float()
+        tgt_mask = tgt_mask.masked_fill(tgt_mask == 0, float('-inf'))
+        tgt_mask = tgt_mask.masked_fill(tgt_mask == 1, float(0.0))
+        tgt_mask = tgt_mask.type(torch.bool)
+        tgt_mask = tgt_mask.to(DEVICE)
+
+        logits = model.decode(preds, mem, tgt_mask)
+        # print(f"{logits.shape=}")
+        logits = model.gen(logits[:, -1, :]) #TODO: CHECKME
+        # print(f"{logits.shape=}")
+        _, next_symb = torch.max(logits, dim=-1) #TODO: CHECKME
+        next_symb = next_symb.item()
+
+        next_symb = torch.ones(1, 1).type_as(src.data).fill_(next_symb)
+        preds = torch.cat([preds, next_symb], dim=-1)
+        
+        if next_symb == end_symbol or next_symb == pad_symbol:
+            break
+
     return preds
 
 

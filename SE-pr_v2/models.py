@@ -148,7 +148,8 @@ class TransformerDecoder(Module):
                 nn.init.xavier_uniform_(p)
         
 
-    def forward(self, src_emb: Tensor, tgt: Tensor, lin_proj: bool=True): #TODO: CHECKME
+    def forward(self, src_emb: Tensor, tgt: Tensor, tgt_mask: Tensor,
+                mem_padmask: Tensor, lin_proj: bool=True): #TODO: CHECKME
         
         # src_emb = src_emb.permute((0, 2, 1))
         # src_emb = self.positional_encoding(src_emb)
@@ -157,10 +158,13 @@ class TransformerDecoder(Module):
         tgt_emb = self.ph_embedding(tgt)
         tgt_emb = self.positional_encoding(tgt_emb)
 
-        print(f"DEBUG: {src_emb.shape=} {tgt_emb.shape=}")
+        print(f"DEBUG: {src_emb.shape=} {tgt_emb.shape=}, {tgt_mask.shape=}, {mem_padmask.shape=}")
 
         #TODO: Add tgt mask (not padding)
-        outs = self.decoder(tgt_emb, src_emb, tgt_key_padding_mask=tgt_mask)
+        outs = self.decoder(
+            tgt=tgt_emb, memory=src_emb, tgt_mask=tgt_mask,
+            tgt_key_padding_mask=tgt_mask, memory_key_padding_mask=mem_padmask,
+            )
 
         if lin_proj:
             return self.generator(outs)
@@ -174,13 +178,15 @@ class Seq2Seq(Module):
         self.prior_encoder = enc
         self.decoder = dec
     
-    def forward(self, tokens_padded, text_lens, lables):
+    def forward(self, tokens_padded, text_lens, lables, tgt_mask):
         # tokens_padded=batch["tokens_padded"]
         # text_lens=batch["text_lens"]
         # lables=batch['lables']
-        enc_out = self.prior_encoder(tokens_padded, text_lens)[0]
+        out = self.prior_encoder(tokens_padded, text_lens)
+        enc_out = out[0]
+        mask = out[-1]
         enc_out = enc_out.permute((0, 2, 1))
-        logit = self.decoder(enc_out, lables)
+        logit = self.decoder(src_emb=enc_out, tgt=lables, tgt_mask=tgt_mask, mem_padmask=mask)
         return logit
     
     def only_encode(self, tokens_padded, text_lens):
@@ -240,7 +246,7 @@ class WhisperX(Module):
             start = int(item['start'] * 1000 // hubert_chunk_ms)
             end   = int(item['end']   * 1000 // hubert_chunk_ms) + 1
 
-            res[i] = (word, [range(start, end)]) #[*range(start, end)]
+            res[i] = (word, range(start, end)) #[*range(start, end)]
         
         return res
 
@@ -291,10 +297,12 @@ class SimpleSeq2SeqTransformer(Module): #TODO: В крайнем случае м
         return out
     
     def encode(self, src: Tensor, src_mask: Tensor=None):
-        return self.backbone.encoder(self.pos_enc(self.src_emb(src)), src_mask)
+        src = self.pos_enc(self.src_emb(src))
+        return self.backbone.encoder(src, src_mask)
     
-    def decode(self, tgt: Tensor, tgt_mask: Tensor=None):
-        return self.backbone.decoder(self.pos_enc(self.tgt_emb(tgt)), tgt_mask)
+    def decode(self, tgt: Tensor, mem: Tensor, tgt_mask: Tensor=None):
+        tgt = self.pos_enc(self.tgt_emb(tgt))
+        return self.backbone.decoder(tgt, mem, tgt_mask)
     
 
 

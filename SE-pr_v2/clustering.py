@@ -102,6 +102,14 @@ class PseudoPhonemes:
     @property
     def pad_id(self):
         return self.l2id(self.pad)
+
+    @property
+    def eos_id(self):
+        return self.l2id(self.eos)
+    
+    @property
+    def bos_id(self):
+        return self.l2id(self.bos)
     
     @property
     def bos(self):

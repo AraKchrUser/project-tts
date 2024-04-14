@@ -244,7 +244,7 @@ class Text2SemanticCode(Dataset):
         return { #TODO: create_masks
             "tokens_padded": tokens_padded, 
             "lables": lables_padded, 
-            "text_lens": text_lens,
+            "text_lens": text_lens, 
             #TODO: create masks in train
             # "src_padding_mask": tokens_padded == t_pad_id, # .transpose(0, 1) ?
             # "tgt_padding_mask": lables_padded == s_pad_id,
@@ -252,6 +252,22 @@ class Text2SemanticCode(Dataset):
             # "tgt_mask": ,
         }
 
+    def get_contents_centers(self, contents, idxs):
+
+        contents = contents.cpu()
+        print(f"{contents.shape=}, {contents[:, idxs].shape=}")
+        contents = contents[:, idxs]
+        contents = contents.squeeze(0).numpy()
+        contents = contents.astype(np.float32)
+
+        y = []
+        for semantic in contents:
+            semantic = semantic.reshape(1, -1)
+            pred_semantic = self.semantic_codes_clusters.predict_cluster_center(semantic)
+            y.append(pred_semantic[0])
+        y = self.semantic_codes_clusters.encode(y)
+        
+        return y
     
     @property
     def default_tokenizer_conf(self):
@@ -358,6 +374,18 @@ class Text2PseudoPhonemes(Dataset):
             "decoded_tokens": self.decode(seq),
             # "pseudo_ph_embeds": pseudo_ph_embed,
             }
+    
+    def get_contents_centers(self, contents, idxs):
+        hiddens = []
+        for idx in idxs:
+            hiddens.append(contents[:, idx])
+
+        y = [self.gen_bos]
+        for pseudo_ph in hiddens:
+            pseudo_ph = pseudo_ph.reshape(1, -1)
+            pred_ph = self.pseudo_phonem_clusters.predict_cluster_center(pseudo_ph)
+            y.append(pred_ph[0])
+        return y
     
     def __len__(self):
         return len(self.texts)
