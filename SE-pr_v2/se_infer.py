@@ -1,11 +1,14 @@
 from typing import *
 from pathlib import Path
 
+from cm_time import timer
+from tqdm import tqdm
 import librosa
 import soundfile
 import numpy as np
 import torch
 import gc
+import so_vits_svc_fork
 from so_vits_svc_fork.inference.core import Svc, split_silence
 
 
@@ -45,12 +48,13 @@ class SvcSpeechEdit(Svc):
                     chunk.audio, 
                     np.zeros([pad_len], dtype=np.float32),
                     ])
-                audio_chunk_padded, _ = self.infer(
+                audio_chunk_padded = self.infer(
                     speaker, transpose, audio_chunk_pad, 
                     cluster_infer_ratio=cluster_infer_ratio,
                     auto_predict_f0=auto_predict_f0,
                     noise_scale=noise_scale, f0_method=f0_method,
-                    ).cpu().numpy()
+                    replaced_contents_info=(src_idxs, tgt_contents),
+                    )[0].cpu().numpy()
                 pad_len = int(self.target_sample * pad_seconds)
                 cut_len_2 = (len(audio_chunk_padded) - len(chunk.audio)) // 2
                 audio_chunk_infer = audio_chunk_padded[cut_len_2 : cut_len_2 + len(chunk.audio)]
@@ -58,11 +62,53 @@ class SvcSpeechEdit(Svc):
             
             out = np.concatenate([out, audio_chunk_infer])
         
-        reutn out[: audio.shape[0]]
+        return out[: audio.shape[0]]
 
     
-    def get_unit_f0():
-        pass
+    def infer(self, speaker, transpose, audio, 
+              cluster_infer_ratio, auto_predict_f0, noise_scale, 
+              f0_method, replaced_contents_info,
+              ): # -> tuple[torch.Tensor, int]:
+        audio = audio.astype(np.float32)
+        if isinstance(speaker, int):
+            if len(self.spk2id.__dict__) >= speaker:
+                speaker_id = speaker
+            else:
+                raise ValueError()
+        else:
+            if speaker in self.spk2id.__dict__:
+                speaker_id = self.spk2id.__dict__[speaker]
+            else:
+                speaker_id = 0
+        speaker_candidates = list(
+            filter(lambda x: x[1] == speaker_id, self.spk2id.__dict__.items())
+        )
+        if len(speaker_candidates) > 1:
+            raise ValueError()
+        elif len(speaker_candidates) == 0:
+            raise ValueError()
+        speaker = speaker_candidates[0][0]
+        sid = torch.LongTensor([int(speaker_id)])
+        sid = sid.to(self.device).unsqueeze(0)
+
+        c, f0, uv = self.get_unit_f0(
+            audio, transpose, cluster_infer_ratio, speaker, f0_method
+        )
+        idxs, contents = replaced_contents_info
+        print(f"{c.shape=}, ") #{contents.shape=}, {idxs=}
+
+        with torch.no_grad():
+            with timer() as t:
+                audio = self.net_g.infer(
+                    c, f0=f0, g=sid, uv=uv,
+                    predict_f0=auto_predict_f0,
+                    noice_scale=noise_scale,
+                )[0, 0].data.float()
+            audio_duration = audio.shape[-1] / self.target_sample
+            print(f"Inference time: {t.elapsed:.2f}s, RTF: {t.elapsed / audio_duration:.2f}")
+        torch.cuda.empty_cache()
+        return audio, audio.shape[-1]
+
 
 
 class SVCInfer:
@@ -92,14 +138,14 @@ class SVCInfer:
         model_path = Path(model_path)
         conf_path = Path(conf_path)
 
-        self.svc_model = Svc(
+        self.svc_model = SvcSpeechEdit(
             net_g_path=model_path.as_posix(), config_path=conf_path.as_posix(), 
             cluster_model_path=None, device=device,
             )
 
 
     @staticmethod
-    def prepare_data(input_paths: List[Path, str], output_dir: Union[Path, str]):
+    def prepare_data(input_paths: List[Union[Path, str]], output_dir: Union[Path, str]):
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         input_paths = [Path(p) for p in input_paths]
@@ -108,13 +154,16 @@ class SVCInfer:
         return input_paths, output_paths
 
 
-    def inference(self, input_paths: List[Path, str], output_dir: Union[Path, str], speaker: Union[int, str],):
+    def inference(self, input_paths: List[Union[Path, str]], 
+                  output_dir: Union[Path, str], speaker: Union[int, str],
+                  src_idxs=Optional[List[int]], tgt_contents=Optional[np.array],
+                  ):
 
-        input_paths, output_paths = SVCInfer.prepare_data(input_paths, output_paths)
+        input_paths, output_paths = SVCInfer.prepare_data(input_paths, output_dir)
         
         pbar = tqdm(list(zip(input_paths, output_paths)), disable=len(input_paths) == 1)
         for input_path, output_path in pbar:
-            audio, _ = librosa.load(str(input_path), sr=svc_model.target_sample)
+            audio, _ = librosa.load(str(input_path), sr=self.svc_model.target_sample)
 
             audio = self.svc_model.infer_silence(
                 audio.astype(np.float32), speaker=speaker, 
@@ -122,9 +171,10 @@ class SVCInfer:
                 cluster_infer_ratio=self.cluster_infer_ratio, noise_scale=self.noise_scale, 
                 f0_method=self.f0_method, db_thresh=self.db_thresh, pad_seconds=self.pad_seconds, 
                 chunk_seconds=self.chunk_seconds, absolute_thresh=self.absolute_thresh, 
-                max_chunk_seconds=self.max_chunk_seconds,
+                max_chunk_seconds=self.max_chunk_seconds, 
+                src_idxs=src_idxs, tgt_contents=tgt_contents,
                 )
-            soundfile.write(str(output_path), audio, svc_model.target_sample)
+            soundfile.write(str(output_path), audio, self.svc_model.target_sample)
     
     def __del__(self):
         del self.svc_model

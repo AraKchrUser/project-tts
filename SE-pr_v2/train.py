@@ -15,6 +15,8 @@ import whisperx
 from models import TextEncoder, TransformerDecoder, Seq2Seq, WhisperX, SimpleSeq2SeqTransformer
 from dataset import Text2PseudoPhonemes, CoquiTTSTokenizer, Text2SemanticCode
 from cutils import load_checkpoint, wip_memory
+from se_infer import SVCInfer
+from calc_content import calc_hubert_content, get_hubert_model
 
 
 def path(_path):
@@ -29,7 +31,7 @@ class Exp(enum.Enum):
 
 LR = 0.0001
 DATASET_SR = 16_000
-BATCH_SIZE = 32
+BATCH_SIZE = 320
 DEVICE     = "cuda" #"cpu"
 NUM_EPOCHS = 2_000
 HUBERT_SR  = 16_000
@@ -332,15 +334,21 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     # Делаем патч
 
     # get contents
-    hubert = HubertModel.from_pretrained(HUBERT_PRETRAIN).to(DEVICE)
-    audio, sr = librosa.load(audio_f, mono=True)
-    audio = torch.from_numpy(audio).float().to(DEVICE)
-    if sr != HUBERT_SR:
-            audio = Resample(sr, HUBERT_SR).to(audio.device)(audio).to(DEVICE)
-    if audio.ndim == 1: audio = audio.unsqueeze(0)
-    with torch.no_grad():
-        contents = hubert(audio).last_hidden_state
-    print(f"DEBUG {contents.shape=}")
+    #V1
+    # hubert = HubertModel.from_pretrained(HUBERT_PRETRAIN).to(DEVICE)
+    # audio, sr = librosa.load(audio_f, mono=True)
+    # audio = torch.from_numpy(audio).float().to(DEVICE)
+    # if sr != HUBERT_SR:
+    #         audio = Resample(sr, HUBERT_SR).to(audio.device)(audio).to(DEVICE)
+    # if audio.ndim == 1: audio = audio.unsqueeze(0)
+    # with torch.no_grad():
+    #     contents = hubert(audio).last_hidden_state
+    # print(f"DEBUG {contents.shape=}")
+    # torch.cuda.empty_cache()
+    # wip_memory(hubert)
+    #V2
+    hubert = get_hubert_model(HUBERT_PRETRAIN, DEVICE, True)
+    contents = calc_hubert_content(hubert, audio_f, DEVICE, None, None)
     torch.cuda.empty_cache()
     wip_memory(hubert)
 
@@ -436,7 +444,20 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
             all_preds[i][f'src_gt ({src_words[i]})']    = gt
             all_preds[i][f'src_preds ({src_words[i]})'] = src_words_preds
 
-    # TODO: replace idx by embeds       
+
+    CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
+    NUM = 1225
+    MODEL_PATH = f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{NUM}.pth"
+    OUT_DIR = "examples/res/"
+    INPUT = [audio_f]
+    infer_vc = SVCInfer(
+        model_path=MODEL_PATH, conf_path=CONFIG_PATH, 
+        auto_predict_f0=True, f0_method="dio",
+        device=DEVICE, noise_scale=.4,
+        )
+    print("=====> SVCInfer works ...")
+    infer_vc.inference(input_paths=INPUT, output_dir=OUT_DIR, speaker=None, )
+
     return all_preds
 
 

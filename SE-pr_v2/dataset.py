@@ -261,10 +261,13 @@ class Text2SemanticCode(Dataset):
         contents = contents.astype(np.float32)
 
         y = []
+        # centers = []
         for semantic in contents:
             semantic = semantic.reshape(1, -1)
             pred_semantic = self.semantic_codes_clusters.predict_cluster_center(semantic)
+            # center = self.semantic_codes_clusters.get_cluster_center(semantic)
             y.append(pred_semantic[0])
+            # centers.append(center)
         y = self.semantic_codes_clusters.encode(y)
         
         return y

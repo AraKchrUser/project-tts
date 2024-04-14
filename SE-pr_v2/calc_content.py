@@ -6,10 +6,38 @@ from joblib import Parallel, delayed, cpu_count
 import numpy as np
 import librosa 
 import torch
+from torch import nn 
 from torchaudio.transforms import Resample
 from transformers import HubertModel
+from torch.nn.utils.weight_norm import WeightNorm
 
 from cutils import get_dataset_from_dir, wip_memory
+
+
+class HubertModelWithFinalProj(HubertModel):
+    def __init__(self, config):
+        super().__init__(config)
+        self.final_proj = nn.Linear(config.hidden_size, config.classifier_proj_size)
+
+
+def remove_weight_norm_if_exists(module, name: str = "weight"):
+    for k, hook in module._forward_pre_hooks.items():
+        if isinstance(hook, WeightNorm) and hook.name == name:
+            hook.remove(module)
+            del module._forward_pre_hooks[k]
+            return module
+
+
+def get_hubert_model(conf: str, device: str, final_proj: bool=True) -> HubertModel:
+    if final_proj:
+        model = HubertModelWithFinalProj
+    else:
+        model = HubertModel
+    model = model.from_pretrained(conf) #"lengyue233/content-vec-best"
+    for m in model.modules():
+        if isinstance(m, (nn.Conv2d, nn.Conv1d)):
+            remove_weight_norm_if_exists(m)
+    return model.to(device)
 
 
 def calc_hubert_content(model: HubertModel, 
@@ -19,12 +47,16 @@ def calc_hubert_content(model: HubertModel,
     if isinstance(audio, str) or isinstance(audio, Path):
         contents = model(audio, model, processor, device)
     else:
+        if isinstance(audio, str):
+            audio, sr = librosa.load(audio, sr=sr, mono=True)
+            audio     = torch.from_numpy(audio).float().to(device)
         if sr != HUBERT_SR:
             audio = Resample(sr, HUBERT_SR).to(audio.device)(audio).to(device)
         if audio.ndim == 1: audio = audio.unsqueeze(0)
         with torch.no_grad():
-            contents = model(audio)
-            contents = contents.last_hidden_state #TODO checking:.transpose(1, 2) #["last_hidden_state"].transpose(1, 2) #
+            contents = model(audio, output_hidden_states=True)["hidden_states"][9]
+            contents = model.final_proj(contents)
+            # contents = contents.last_hidden_state #TODO checking:.transpose(1, 2) #["last_hidden_state"].transpose(1, 2) #
     return contents
 
 
@@ -53,7 +85,8 @@ def _one_item_hubert_infer(file, hubert_model, hps):
 
 def _batch_hubert_infer(files, pbar, hps):
     '''Вичисление контент векторов для N-файлов в одном запущенном потоке'''
-    hubert_model = HubertModel.from_pretrained(hps["hmodel_id"]).to(hps["device"])
+    # hubert_model = HubertModel.from_pretrained(hps["hmodel_id"]).to(hps["device"])
+    hubert_model = get_hubert_model(conf=hps["hmodel_id"], device=hps["device"], final_proj=True)
     for file in tqdm(files, position=pbar):
         _one_item_hubert_infer(file, hubert_model, hps)
     wip_memory(hubert_model)

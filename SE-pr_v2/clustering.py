@@ -79,6 +79,9 @@ class PseudoPhonemes:
         assert self.init_clusters is not None
         predict = self.kmeans.predict(item)
         return self.kmeans.cluster_centers_[predict]
+    
+    def get_center_by_label(self, label: int):
+        return self.kmeans.cluster_centers_[label]
 
     def predict_cluster_center(self, item: Any):
         assert self.init_clusters is not None
