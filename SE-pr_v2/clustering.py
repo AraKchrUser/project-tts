@@ -5,6 +5,7 @@ import math
 from joblib import Parallel, delayed, cpu_count
 from tqdm_joblib import tqdm_joblib
 from cm_time import timer
+from tqdm import tqdm
 
 import numpy as np
 import torch 
@@ -23,9 +24,9 @@ def incremental_clustering(input_path_dir: Union[Path, str], out_path_file: Unio
     with timer() as time:
         kmeans = MiniBatchKMeans(
             n_clusters=n_clusters, batch_size=batch_size, 
-            max_iter=80, n_init="auto", verbose=False,
+            max_iter=1000, n_init="auto", verbose=False,
             )
-        for batch_idx in range(0, len(dataset), batch_size):
+        for batch_idx in tqdm(range(0, len(dataset), batch_size)):
             feats = list()
             for data_path in dataset[batch_idx: batch_idx + batch_size]:
                 with data_path.open("rb") as file:
@@ -154,3 +155,10 @@ class PseudoPhonemes:
         self._l2id = {k:v for k,v in enumerate(self.vocab)}
         self._id2l = {v:k for k,v in enumerate(self.vocab)}
         return
+    
+
+if __name__ == "__main__":
+    incremental_clustering(
+        "../../NIR/RuDevices_extracted_contents", "../../NIR/RuDevices_content_clusters/clusters_10000.pt",
+        n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt"
+    )

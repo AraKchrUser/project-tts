@@ -33,9 +33,10 @@ LR = 0.0001
 DATASET_SR = 16_000
 BATCH_SIZE = 320
 DEVICE     = "cuda" #"cpu"
-NUM_EPOCHS = 2_000
+NUM_EPOCHS = 250
 HUBERT_SR  = 16_000
 HUBERT_PRETRAIN  = "/mnt/storage/kocharyan/hfmodels/content-vec-best" #"facebook/hubert-large-ls960-ft"
+CLUSTERS_PATH = "../../NIR/RuDevices_content_clusters/clusters.pt" #path("clusters/clusters.pt")
 MODEL_TYPE = 1
 EXP_CODE = Exp.simple_transformer
 
@@ -254,7 +255,7 @@ def init_dataset():
         print("Text2SemanticCode dataset prepared")
         return Text2SemanticCode(
             texts_path=path("rudevices_chunk"), contents_path=path("extracted_contents"), 
-            clusters_path=path("clusters/clusters.pt"), tokenizer_conf=None, dsrate=DATASET_SR,
+            clusters_path=CLUSTERS_PATH, tokenizer_conf=None, dsrate=DATASET_SR,
         )
     elif EXP_CODE == Exp.yourtts_encoder:
         return Text2PseudoPhonemes(
@@ -270,8 +271,8 @@ def init_simple_transformer(dataset):
     dim_ff = 256
     src_vocab = dataset.text_tokenizer.size
     tgt_vocab = dataset.semantic_codes_clusters.vocab_size
-    assert src_vocab == 42
-    assert tgt_vocab == 103
+    # assert src_vocab == 42
+    # assert tgt_vocab == 103
     model = SimpleSeq2SeqTransformer(
         num_enc=num_enc, num_dec=num_dec, emb_size=emb_size, nhead=nhead, dim_ff=dim_ff,
         src_vocab=src_vocab, tgt_vocab=tgt_vocab,
@@ -321,6 +322,67 @@ def train():
         losses.append(np.mean(_losses))
     
     return losses, model, dataset
+
+
+def sentense_speech_editing(audio_f, src_text, target_text, dataset, model=None):
+    hubert = get_hubert_model(HUBERT_PRETRAIN, DEVICE, True)
+    contents = calc_hubert_content(hubert, audio_f, DEVICE, None, None)
+    torch.cuda.empty_cache()
+    wip_memory(hubert)
+
+    audio  = WhisperX.load_audio(audio_f)
+    whisperx_model = WhisperX()
+    out = whisperx_model(audio)
+    # alignment = WhisperX.postprocess_out(out, by='words')
+    # timesteps = WhisperX.formed_timesteps(alignment)
+
+    if src_text is None:
+        src_text = out['segments'][0]['text']
+    
+    if dataset is None:
+        dataset = init_dataset()
+    
+    model_p = model
+    model, pad, eos, bos = init_simple_transformer(dataset=dataset)
+    model.load_state_dict(torch.load(model_p))
+    model.eval()
+    model = model.to(DEVICE)
+
+    token_ids = dataset.tokenizer_encode(target_text)
+    text_len  = len(target_text)
+    num_tokens = len(token_ids)
+    token_ids = torch.LongTensor([token_ids])
+    src_mask = (torch.zeros(num_tokens, num_tokens)).type(torch.bool)
+    tgt_words_preds = new_greedy_decoding(
+                        model, src=token_ids, src_mask=src_mask, pad_symbol=pad,
+                        max_len=500, start_symbol=bos, end_symbol=eos,
+                    ).cpu().numpy()
+    
+    tgt_words_preds = dataset.semantic_codes_clusters.decode(tgt_words_preds[0])
+    centriods = []
+    for label in tgt_words_preds:
+        centriods.append(dataset.semantic_codes_clusters.get_center_by_label(label))
+    centriods = np.stack(centriods, axis=0)
+
+    CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
+    NUM = 1225
+    MODEL_PATH = f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{NUM}.pth"
+    OUT_DIR = "examples/res/"
+    INPUT = [audio_f]
+    infer_vc = SVCInfer(
+            model_path=MODEL_PATH, conf_path=CONFIG_PATH, 
+            auto_predict_f0=True, f0_method="dio",
+            device=DEVICE, noise_scale=.4,
+        )
+    
+    print("=====> SVCInfer works ...")
+    infer_vc.inference(
+            input_paths=INPUT, output_dir=OUT_DIR, speaker=None, 
+            src_idxs=None, tgt_contents=centriods,
+        )
+
+    return 
+
 
 def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     # Idea:
@@ -440,13 +502,13 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
                     )
                 preds = preds.cpu().numpy()#[1:-1]
             all_preds[i] = {}
-            all_preds[i][f'tgt_preds ({tgt_words[i]})'] = dataset.semantic_codes_clusters.decode(tgt_words_preds)
+            all_preds[i][f'tgt_preds ({tgt_words[i]})'] = dataset.semantic_codes_clusters.decode(tgt_words_preds[0])
             centriods = []
             for label in all_preds[i][f'tgt_preds ({tgt_words[i]})']:
                 centriods.append(dataset.semantic_codes_clusters.get_center_by_label(label))
             all_preds[i]["tgt centriods"] = centriods
             all_preds[i][f'src_gt ({src_words[i]})']    = gt
-            all_preds[i][f'src_preds ({src_words[i]})'] = dataset.semantic_codes_clusters.decode(src_words_preds)
+            all_preds[i][f'src_preds ({src_words[i]})'] = dataset.semantic_codes_clusters.decode(src_words_preds[0])
 
 
     CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
@@ -455,17 +517,29 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     OUT_DIR = "examples/res/"
     INPUT = [audio_f]
     infer_vc = SVCInfer(
-        model_path=MODEL_PATH, conf_path=CONFIG_PATH, 
-        auto_predict_f0=True, f0_method="dio",
-        device=DEVICE, noise_scale=.4,
+            model_path=MODEL_PATH, conf_path=CONFIG_PATH, 
+            auto_predict_f0=True, f0_method="dio",
+            device=DEVICE, noise_scale=.4,
         )
     
     # Для простоты:
-    all_preds[0]
-    print("=====> SVCInfer works ...")
-    infer_vc.inference(input_paths=INPUT, output_dir=OUT_DIR, speaker=None, )
+    # all_preds[0]
+    key = next(iter(all_preds))
+    print("Replaced for ", tgt_words[key])
+    src_idxs = all_preds[key][f'tgt_preds ({tgt_words[key]})']
+    tgt_contents = all_preds[key]["tgt centriods"] #np.stack(all_preds[key]["tgt centriods"], axis=0)
+    
+    tgt_contents_copy = np.stack(all_preds[key]["tgt centriods"], axis=0)
+    assert tgt_contents_copy.shape[1] == 256
+    assert tgt_contents_copy.shape[0] == len(src_idxs)
 
-    print(all_preds)
+    print("=====> SVCInfer works ...")
+    infer_vc.inference(
+            input_paths=INPUT, output_dir=OUT_DIR, speaker=None, 
+            src_idxs=src_idxs, tgt_contents=tgt_contents,
+        )
+
+    # print(all_preds)
 
     return all_preds
 
@@ -546,5 +620,6 @@ def greedy_decoding(model, src, src_len, max_len, start_symbol, end_symbol):
 
 
 if __name__ == "main":
-    train()
+    losses, model, dataset = train()
+    torch.save(model.state_dict(), "ckpts/seq2seq_v3.pkl")
     

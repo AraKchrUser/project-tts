@@ -44,8 +44,10 @@ def calc_hubert_content(model: HubertModel,
                         audio: Union[torch.Tensor, str, Path], 
                         device: str, sr: int, processor: Optional[Any]) -> torch.Tensor:
     HUBERT_SR = 16_000
-    if isinstance(audio, str) or isinstance(audio, Path):
-        contents = model(audio, model, processor, device)
+    if 0 == 1:
+        pass
+    # if isinstance(audio, str) or isinstance(audio, Path):
+    #     contents = model(audio, model, processor, device)
     else:
         if isinstance(audio, str):
             audio, sr = librosa.load(audio, sr=sr, mono=True)
@@ -118,3 +120,14 @@ def create_hubert_content(data_dir: Union[str, Path] = "RuDevices", srate: int =
     ) for (pbar, chunk) in enumerate(file_chunks))
 
     return
+
+
+
+if __name__ == "__main__":
+    from cutils import del_folder
+    out_dir = "../../NIR/RuDevices_extracted_contents"
+    del_folder(out_dir)
+    create_hubert_content(
+        data_dir="../../NIR/RuDevices/", out_dir=out_dir, 
+        njobs=10, pretrain_path="../../hfmodels/content-vec-best",
+    )
