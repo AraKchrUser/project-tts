@@ -158,7 +158,15 @@ class PseudoPhonemes:
     
 
 if __name__ == "__main__":
+    # incremental_clustering(
+    #     "../../NIR/RuDevices_extracted_contents", "../../NIR/RuDevices_content_clusters/clusters_10000.pt",
+    #     n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt"
+    # )
+    # incremental_clustering(
+    #     "../../NIR/RuDevices_extracted_contents", "../../NIR/RuDevices_content_clusters/clusters_10000.pt",
+    #     n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt"
+    # )
     incremental_clustering(
-        "../../NIR/RuDevices_extracted_contents", "../../NIR/RuDevices_content_clusters/clusters_10000.pt",
+        "../../NIR/ruslan_contents/", "../../NIR/ruslan_content_clusters/clusters_10000.pt",
         n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt"
     )

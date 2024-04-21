@@ -511,9 +511,14 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
             all_preds[i][f'src_preds ({src_words[i]})'] = dataset.semantic_codes_clusters.decode(src_words_preds[0])
 
 
-    CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
+    
     NUM = 1225
+
+    # CONFIG_PATH = "/mnt/storage/kocharyan/Leps-so-vits/config.json" #"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
+    # MODEL_PATH = "/mnt/storage/kocharyan/Leps-so-vits/Leps_G_10000.pth" #f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{NUM}.pth"
+    CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
     MODEL_PATH = f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{NUM}.pth"
+
     OUT_DIR = "examples/res/"
     INPUT = [audio_f]
     infer_vc = SVCInfer(

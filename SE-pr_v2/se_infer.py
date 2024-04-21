@@ -99,16 +99,18 @@ class SvcSpeechEdit(Svc):
         
         if VERSION == 1:
             # (499, 256)
-            c, f0, uv = self.get_unit_f0(
-                None, audio, transpose, cluster_infer_ratio, speaker, f0_method
-            ) #TODO: Добавить предсказание F0 для замененных кластеров 
+
+            # c, f0, uv = self.get_unit_f0(
+            #     None, audio, transpose, cluster_infer_ratio, None, speaker, f0_method
+            # ) #TODO: Добавить предсказание F0 для замененных кластеров 
+
             # contents = torch.from_numpy(np.stack(contents, axis=0)) # [N, 256] -> 
             # contents = contents.transpose(1, 0) # [256, N], where [h, t]
             # # if c.shape[-1] != contents.shape[-1]
             # contents = torch.nn.functional.interpolate(
             #     contents.unsqueeze(0), size=contents.shape[-1]*2, mode="nearest"
             #         ).squeeze(0)
-            n = 5
+            # n = 5
             # 
             # for i in range(len(idxs)):
             #     for _ in range(n):
@@ -134,32 +136,64 @@ class SvcSpeechEdit(Svc):
 
             # Теперь используем кластеризатор 
             from clustering import PseudoPhonemes
-            clusters_path = "../../NIR/RuDevices_content_clusters/clusters_10000.pt"
+            # clusters_path = "../../NIR/ruslan_content_clusters/clusters_10000.pt"
+            clusters_path = "../../NIR/RuDevices_content_clusters/clusters_v2.pt" #1000
             # TODO check clusters count 
+            # TODO: выполнить кластеризацию в get_unit_f0
             semantic_codes_clusters = PseudoPhonemes(clusters_path)
             semantic_codes_clusters.build_clusters()
             semantic_codes_clusters.on_labling_mode()
+            print(f"{semantic_codes_clusters.size=}")
 
+            c, f0, uv = self.get_unit_f0(
+                None, audio, transpose, cluster_infer_ratio, semantic_codes_clusters, speaker, f0_method
+            )
+
+            print("Using custom getting clusters centers")
             new_c = c[0, :, 12:120].squeeze(0).transpose(1, 0) # [256, N] -> [N, 256]
             new_c = new_c.cpu().numpy().astype(np.float32)
-            print(f"{new_c.shape=}")
+            # print(f"{new_c.shape=}")
             for i, semantic in enumerate(new_c):
                 semantic = np.array(semantic)
                 assert len(semantic) == 256
                 semantic = semantic.reshape(1, -1)
-                semantic = semantic_codes_clusters.predict_cluster_center(semantic)[0]
-                c[0, :, 192+i] = semantic #0
+                # print(f"{semantic.shape=}")
+                semantic = semantic_codes_clusters.get_cluster_center(semantic)[0]
+                # print(f"{semantic=}")
+                ratio = 0.1
+                c[0, :, 192+i] = torch.from_numpy(semantic).to("cuda")
+                # c[0, :, 192+i] = (1 - ratio) * c[0, :, 192+i] + ratio * semantic #0
+                # print(f"{c[0, :, 192+i].shape=}")
+
+            # скачок в начале графика -> в начале графика скачок
+            # Многое захардкожено в в модели (из-за этого не получится проссто так это сделать)
+            # print(f"{f0.shape=} {c.shape=}")
+            # c = c[0, :, 100:].unsqueeze(0)
+            # f0 = f0.unsqueeze(0)[0, :, 100:]
+            # print(f"{f0.shape=} {c.shape=}")
+            # assert f0.shape[-1] == c.shape[-1]
+            # скачок который видел в начале графика ->  графика который видел в начале скачок
+            
+            # a = torch.clone(c[0, :, 10:120])
+            # b = torch.clone(c[0, :, 190:300])
+            # c[0, :, 192:300] = a
+            # c[0, :, 12:120] = b
+            # a = torch.clone(f0[10:120])
+            # b = torch.clone(f0[190:300])
+            # f0[190:300] = a
+            # f0[10:120] = b
+
 
             # c[0, :, 192:300] = c[0, :, 12:120]
-            f0[192:300] = f0[12:120]
+            # f0[192:300] = f0[12:120]
             
-            print(f"{f0.shape=} {c.shape=}")
+            
             # print(f"{c.shape=}, ") #{contents.shape=}, {idxs=} [1, 256, 801]
         else:
             print(f"{contents.shape=}, ")
             c = torch.from_numpy(contents).transpose(1, 0).unsqueeze(0).to("cuda") #.transpose(0, 1)
             c, f0, uv = self.get_unit_f0(
-                c, audio, transpose, cluster_infer_ratio, speaker, f0_method
+                c, audio, transpose, cluster_infer_ratio, None, speaker, f0_method
             ) #TODO: Добавить предсказание F0 для замененных кластеров 
             print(f"{c.shape=}, ") # [1, 256, 801]
 
@@ -182,6 +216,7 @@ class SvcSpeechEdit(Svc):
         audio: np.array,
         tran: int,
         cluster_infer_ratio: float,
+        cluster_model: None,
         speaker: int | str,
         f0_method: Literal[
             "crepe", "crepe-tiny", "parselmouth", "dio", "harvest"
@@ -210,12 +245,23 @@ class SvcSpeechEdit(Svc):
                 ).to(self.dtype)
         c = repeat_expand_2d(c.squeeze(0), f0.shape[1]) #
 
-        # if cluster_infer_ratio != 0:
-        #     cluster_c = cluster.get_cluster_center_result(
-        #         self.cluster_model, c.cpu().numpy().T, speaker
-        #     ).T
-        #     cluster_c = torch.FloatTensor(cluster_c).to(self.device)
-        #     c = cluster_infer_ratio * cluster_c + (1 - cluster_infer_ratio) * c
+        
+        # В чем моя ошибка? Почему так работает
+        # cluster_c = cluster_model.get_cluster_center(c[:, 12:120].cpu().numpy().T).T
+        # cluster_c = torch.FloatTensor(cluster_c).to(self.device)
+        # print(f"{cluster_c.shape=}")
+        # c[:, 192:300] = cluster_c
+
+        # Работает 
+        # cluster_c = cluster_model.get_cluster_center(c.cpu().numpy().T).T
+        # cluster_c = torch.FloatTensor(cluster_c).to(self.device)
+        # c = cluster_c
+        
+        # cluster_infer_ratio = 1.
+        # cluster_c = cluster_model.get_cluster_center(c.cpu().numpy().T).T
+        # cluster_c = torch.FloatTensor(cluster_c).to(self.device)
+        # c = cluster_infer_ratio * cluster_c + (1 - cluster_infer_ratio) * c
+        print(f"Add clusters, {cluster_infer_ratio=}")
 
         c = c.unsqueeze(0)
         return c, f0, uv
@@ -291,3 +337,9 @@ class SVCInfer:
         del self.svc_model
         gc.collect()
         torch.cuda.empty_cache()
+
+
+
+
+class ConcatHuBERTRepr(SvcSpeechEdit):
+    pass

@@ -126,8 +126,14 @@ def create_hubert_content(data_dir: Union[str, Path] = "RuDevices", srate: int =
 if __name__ == "__main__":
     from cutils import del_folder
     out_dir = "../../NIR/RuDevices_extracted_contents"
+    # del_folder(out_dir)
+    # create_hubert_content(
+    #     data_dir="../../NIR/RuDevices/", out_dir=out_dir, 
+    #     njobs=10, pretrain_path="../../hfmodels/content-vec-best",
+    # )
+    out_dir = "../../NIR/ruslan_contents/"
     del_folder(out_dir)
     create_hubert_content(
-        data_dir="../../NIR/RuDevices/", out_dir=out_dir, 
+        data_dir="../../sambashare/ruslan_ds/RUSLAN/", out_dir=out_dir, 
         njobs=10, pretrain_path="../../hfmodels/content-vec-best",
     )
