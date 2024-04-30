@@ -1,7 +1,9 @@
 from typing import * 
 from pathlib import Path
 import json
+from tqdm import tqdm
 
+from joblib import Parallel, delayed, cpu_count
 import librosa
 import numpy as np
 import torch
@@ -138,7 +140,8 @@ class GraphemeTTSTokenizer:
 class Text2SemanticCode(Dataset):
 
     def __init__(self, texts_path: str, contents_path: str, clusters_path: str, 
-                 tokenizer_conf: Optional[Dict[str, str]], dsrate: int=16_000) -> None:
+                 tokenizer_conf: Optional[Dict[str, str]], dsrate: int=16_000,
+                 pre_calc_labels: bool=True, labels_path: Optional[str]=None) -> None:
         super().__init__()
 
         self.texts = self._get_texts(texts_path)
@@ -162,6 +165,9 @@ class Text2SemanticCode(Dataset):
             blank=None, processor=GraphemeTTSTokenizer.text_processor,
         )
 
+        self.pre_calc_labels = pre_calc_labels
+        self.labels_path = labels_path
+
         return
     
     def __len__(self):
@@ -173,16 +179,23 @@ class Text2SemanticCode(Dataset):
         seq = self.tokenizer_encode(text)
         x = torch.LongTensor(seq)
 
-        contents = torch.load(self.contents[index], weights_only=True)
-        contents = contents["content"].squeeze(0).numpy()
-        contents = contents.astype(np.float32)
-        labels = []
-        for semantic in contents:
-            semantic = semantic.reshape(1, -1)
-            pred_semantic = self.semantic_codes_clusters.predict_cluster_center(semantic)
-            labels.append(pred_semantic[0])
-        encoded_labels = self.semantic_codes_clusters.encode(labels)
-        y = torch.LongTensor(encoded_labels)
+        if not self.pre_calc_labels:
+            contents = torch.load(self.contents[index], weights_only=True)
+            contents = contents["content"].squeeze(0).numpy()
+            contents = contents.astype(np.float32)
+            labels = []
+            for semantic in contents: #<!TODO>:  Вынести это в отдельную операцию - должно ускорить обучения 
+                semantic = semantic.reshape(1, -1) # ((256,) -> (1, 256))
+                pred_semantic = self.semantic_codes_clusters.predict_cluster_center(semantic)
+                labels.append(pred_semantic[0])
+            encoded_labels = self.semantic_codes_clusters.encode(labels)
+            y = torch.LongTensor(encoded_labels)
+            print(f" Not pre calc")
+        else:
+            labels_p = Path(self.labels_path) / (Path(self.contents[index]).name + ".label")
+            y = torch.load(labels_p, weights_only=True)["labels"]
+            y = torch.LongTensor(y)
+            print(f" Pre calc")
 
         return {
             "tokens": x,
@@ -191,6 +204,28 @@ class Text2SemanticCode(Dataset):
             "decoded_tokens": self.tokenizer_decode(seq),
         }
 
+    def multiproc_labeling(self, n_jobs, save_to):
+        def _batch_labling(chunk, pbar):
+            for i in tqdm(chunk, position=pbar):
+                content = torch.load(self.contents[i], weights_only=True)
+                content = content["content"].squeeze(0).numpy()
+                preds = self.semantic_codes_clusters.predict_cluster_center(content)
+                preds = self.semantic_codes_clusters.encode(preds)
+                fname = Path(self.contents[i]).name + '.label'
+                content_path = Path(save_to) / fname
+                with content_path.open("wb") as f:
+                    torch.save({"labels": preds}, f)
+            return
+        
+        Path(save_to).mkdir(parents=True, exist_ok=True)
+        self.labels_path = save_to
+
+        idxs_chunks = np.array_split(range(len(self.texts)), n_jobs)
+        Parallel(n_jobs=n_jobs)(delayed(_batch_labling)(
+            chunk, pbar
+        ) for (pbar, chunk) in enumerate(idxs_chunks))
+
+        return
 
     def _get_texts(self, texts_path):
         return sorted(get_dataset_from_dir(texts_path, "*.txt"))

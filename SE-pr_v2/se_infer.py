@@ -98,6 +98,7 @@ class SvcSpeechEdit(Svc):
         idxs, contents = replaced_contents_info
         
         if VERSION == 1:
+            print(f"VERSION {VERSION}")
             # (499, 256)
 
             # c, f0, uv = self.get_unit_f0(
@@ -148,22 +149,40 @@ class SvcSpeechEdit(Svc):
             c, f0, uv = self.get_unit_f0(
                 None, audio, transpose, cluster_infer_ratio, semantic_codes_clusters, speaker, f0_method
             )
+            print(f"==> {c.shape=}, {f0.shape=}, {uv.shape=}") # [1, 256, 310], [1, 310], [1, 310]
+            
+            #!?) Тут Выделили слово [не работает]
+            # c, f0, uv = c[..., 192:300], f0[..., 192:300], uv[..., 192:300]
+            
+            #!?) Удаление слова [не работает]
+            # c, f0, uv = c[..., :192], f0[..., :192], uv[..., :192]
+            
+            #!?) Тут обнулили начало/конец
+            # c[..., :192] = f0[..., :192] = uv[..., :192] = 0
+            # c[..., 192:] = f0[..., 192:] = uv[..., 192:] = 0
 
-            print("Using custom getting clusters centers")
-            new_c = c[0, :, 12:120].squeeze(0).transpose(1, 0) # [256, N] -> [N, 256]
-            new_c = new_c.cpu().numpy().astype(np.float32)
-            # print(f"{new_c.shape=}")
-            for i, semantic in enumerate(new_c):
-                semantic = np.array(semantic)
-                assert len(semantic) == 256
-                semantic = semantic.reshape(1, -1)
-                # print(f"{semantic.shape=}")
-                semantic = semantic_codes_clusters.get_cluster_center(semantic)[0]
-                # print(f"{semantic=}")
-                ratio = 0.1
-                c[0, :, 192+i] = torch.from_numpy(semantic).to("cuda")
-                # c[0, :, 192+i] = (1 - ratio) * c[0, :, 192+i] + ratio * semantic #0
-                # print(f"{c[0, :, 192+i].shape=}")
+            #!?) Тут поменяли начало/конец
+            c[0, :, 192:300] = c[0, :, 12:120]
+            f0[192:300] = f0[12:120]
+            uv[192:300] = uv[12:120]
+
+            print(f"==> {c.shape=}, {f0.shape}, {uv.shape}")
+
+            # print("Using custom getting clusters centers")
+            # new_c = c[0, :, 12:120].squeeze(0).transpose(1, 0) # [256, N] -> [N, 256]
+            # new_c = new_c.cpu().numpy().astype(np.float32)
+            # # print(f"{new_c.shape=}")
+            # for i, semantic in enumerate(new_c):
+            #     semantic = np.array(semantic)
+            #     assert len(semantic) == 256
+            #     semantic = semantic.reshape(1, -1)
+            #     # print(f"{semantic.shape=}")
+            #     semantic = semantic_codes_clusters.get_cluster_center(semantic)[0]
+            #     # print(f"{semantic=}")
+            #     ratio = 0.1
+            #     c[0, :, 192+i] = torch.from_numpy(semantic).to("cuda")
+            #     # c[0, :, 192+i] = (1 - ratio) * c[0, :, 192+i] + ratio * semantic #0
+            #     # print(f"{c[0, :, 192+i].shape=}")
 
             # скачок в начале графика -> в начале графика скачок
             # Многое захардкожено в в модели (из-за этого не получится проссто так это сделать)
@@ -182,20 +201,17 @@ class SvcSpeechEdit(Svc):
             # b = torch.clone(f0[190:300])
             # f0[190:300] = a
             # f0[10:120] = b
-
-
-            # c[0, :, 192:300] = c[0, :, 12:120]
-            # f0[192:300] = f0[12:120]
             
             
             # print(f"{c.shape=}, ") #{contents.shape=}, {idxs=} [1, 256, 801]
         else:
-            print(f"{contents.shape=}, ")
+            print(f"VERSION {VERSION}")
+            # print(f"{contents.shape=}, ")
             c = torch.from_numpy(contents).transpose(1, 0).unsqueeze(0).to("cuda") #.transpose(0, 1)
             c, f0, uv = self.get_unit_f0(
                 c, audio, transpose, cluster_infer_ratio, None, speaker, f0_method
             ) #TODO: Добавить предсказание F0 для замененных кластеров 
-            print(f"{c.shape=}, ") # [1, 256, 801]
+            print(f"{c.shape=}, {f0.shape}, {uv.shape}") # [1, 256, 801]
 
         with torch.no_grad():
             with timer() as t:

@@ -32,7 +32,7 @@ def incremental_clustering(input_path_dir: Union[Path, str], out_path_file: Unio
                 with data_path.open("rb") as file:
                     content = (
                         torch.load(file, weights_only=True)["content"]
-                        ).squeeze(0).numpy()# .T # TODO: load form disk
+                        ).squeeze(0).numpy().T # TODO: load form disk
                     feats.append(content)
             feats = np.concatenate(feats, axis=0).astype(np.float32)
             # print(f"hubert contents shape: {feats.shape}, {feats.nbytes / 1024 / 1024:.2f} MB") #TODO:make increments
@@ -168,5 +168,5 @@ if __name__ == "__main__":
     # )
     incremental_clustering(
         "../../NIR/ruslan_contents/", "../../NIR/ruslan_content_clusters/clusters_10000.pt",
-        n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt"
+        n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt",
     )
