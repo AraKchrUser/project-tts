@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import * 
 from tqdm import tqdm
 
+from cm_time import timer
 from joblib import Parallel, delayed, cpu_count
 import numpy as np
 import librosa 
@@ -12,13 +13,38 @@ from transformers import HubertModel
 from torch.nn.utils.weight_norm import WeightNorm
 
 import so_vits_svc_fork
-from so_vits_svc_fork.f0 import compute_f0
+from so_vits_svc_fork.f0 import compute_f0_pyworld, compute_f0_crepe, compute_f0_parselmouth
 
 from cutils import get_dataset_from_dir, wip_memory
 
 import logging
 logger = logging.getLogger('so_vits_svc_fork')
 logger.setLevel(logging.ERROR)
+
+
+def compute_f0(
+        wav_numpy, p_len: Optional[int]=None, sampling_rate: int=44100,
+        hop_length: int=512, method: Literal["crepe", "crepe-tiny", 
+                                             "parselmouth", "dio", "harvest"]="dio",
+        **kwargs,
+    ):
+    with timer() as t:
+        wav_numpy = wav_numpy.astype(np.float32)
+        wav_numpy /= np.quantile(np.abs(wav_numpy), 0.999)
+        if method in ["dio", "harvest"]:
+            f0 = compute_f0_pyworld(wav_numpy, p_len, sampling_rate, hop_length, method)
+        elif method == "crepe":
+            f0 = compute_f0_crepe(wav_numpy, p_len, sampling_rate, hop_length, **kwargs)
+        elif method == "crepe-tiny":
+            f0 = compute_f0_crepe(
+                wav_numpy, p_len, sampling_rate, hop_length, model="tiny", **kwargs
+            )
+        elif method == "parselmouth":
+            f0 = compute_f0_parselmouth(wav_numpy, p_len, sampling_rate, hop_length)
+        else:
+            raise ValueError()
+    # rtf = t.elapsed / (len(wav_numpy) / sampling_rate)
+    return f0
 
 
 class HubertModelWithFinalProj(HubertModel):
@@ -69,7 +95,7 @@ def calc_hubert_content(model: HubertModel,
     return contents.transpose(1, 2)
 
 
-def _one_item_hubert_infer(file, hubert_model, hps):
+def _one_item_hubert_infer(file, hubert_model, hps, return_data=False):
     '''Вычисление контент-векторов для файла и сохранение'''
 
     def content_interpolate(content: torch.Tensor, tgt_len: int):
@@ -90,30 +116,32 @@ def _one_item_hubert_infer(file, hubert_model, hps):
     # print(content.shape) torch.Size([1, 59, 768])
     
     # compute_f0
-    f0 = so_vits_svc_fork.f0.compute_f0(
-        audio.cpu().numpy(), sampling_rate=sr, 
-        hop_length=hps["hop_len"], method=hps["f0_method"],
+    f0 = compute_f0(
+            audio.cpu().numpy(), sampling_rate=sr, 
+            hop_length=hps["hop_len"], method=hps["f0_method"],
         )
     f0, uv = so_vits_svc_fork.f0.interpolate_f0(f0)
     f0 = torch.from_numpy(f0).float()
 
     # interpolate 
-    # print(f"_one_item_hubert_infer, {content.shape=} {f0.shape=}")
+    # print(f"src, {content.shape=} {f0.shape=}")
     content = content_interpolate(content.squeeze(0), f0.shape[0])
+    # print(f"tgt, {content.shape=} {f0.shape=}")
     length = min(f0.shape[0], content.shape[1])
     f0, content = f0[:length], content[:, :length]
     
     torch.cuda.empty_cache()
 
-    file = Path(file).relative_to(hps['rel_to']).as_posix()
-    content_path = Path(hps["out_dir"]) / (".".join(file.split("/")) + ".content.pt")
-    with content_path.open("wb") as f:
-        torch.save({
-            "content": content.cpu(),
-            "f0": f0.cpu(),
-            }, f)
-
-    return
+    if not return_data:
+        file = Path(file).relative_to(hps['rel_to']).as_posix()
+        content_path = Path(hps["out_dir"]) / (".".join(file.split("/")) + ".content.pt")
+        with content_path.open("wb") as f:
+            torch.save({
+                "content": content.cpu(),
+                "f0": f0.cpu(),
+                }, f)
+        return
+    return {"content": content.cpu(), "f0": f0.cpu()}
 
 
 def _batch_hubert_infer(files, pbar, hps):
@@ -168,5 +196,5 @@ if __name__ == "__main__":
     del_folder(out_dir)
     create_hubert_content(
         data_dir="../../sambashare/ruslan_ds/RUSLAN/", out_dir=out_dir, 
-        njobs=10, pretrain_path="../../hfmodels/content-vec-best",
+        njobs=5, pretrain_path="../../hfmodels/content-vec-best",
     )

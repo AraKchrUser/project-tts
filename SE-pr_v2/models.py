@@ -9,6 +9,8 @@ from torch import nn
 from torch.nn import Module
 from torch import Tensor
 
+from string import punctuation
+remove_punctuation = lambda string: ''.join(filter(lambda sym: sym not in punctuation, string.lower().strip()))
 
 class TextDecoder(nn.Module): 
     #TODO: Надо думать как использовать в авторегрессоном режиме. Но такой работает вроде в GPT-So-VITS
@@ -228,12 +230,16 @@ class WhisperX(Module):
     
     @staticmethod
     def postprocess_out(output, by="chars"):
-        segments = output.get("segments", [])
-        if segments:
-            if not isinstance(segments[0], dict):
-                return []
-            return segments[0].get(by, [])
-        return []
+        # segments = output.get("segments", [])
+        # if segments:
+        #     if not isinstance(segments[0], dict):
+        #         return []
+        #     return segments[0].get(by, [])
+        res = []
+        for seg in output['segments']:
+            for word in seg['words']:
+                res.append(word)
+        return res
     
     @staticmethod
     def formed_timesteps(alignment): #TODO: punctuation remov
@@ -242,7 +248,7 @@ class WhisperX(Module):
         hubert_chunk_ms = 20
         for i, item in enumerate(alignment):
 
-            word = item['word'].lower()
+            word = remove_punctuation(item['word'].lower())
             start = int(item['start'] * 1000 // hubert_chunk_ms)
             end   = int(item['end']   * 1000 // hubert_chunk_ms) + 1
 

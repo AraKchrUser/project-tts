@@ -167,6 +167,6 @@ if __name__ == "__main__":
     #     n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt"
     # )
     incremental_clustering(
-        "../../NIR/ruslan_contents/", "../../NIR/ruslan_content_clusters/clusters_10000.pt",
-        n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt",
+        "../../NIR/ruslan_contents/", "../../NIR/ruslan_content_clusters/clusters_250.pt",
+        n_clusters=250, batch_size=4096, data_pattern="*.content.pt",
     )

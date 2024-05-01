@@ -31,12 +31,12 @@ class Exp(enum.Enum):
 
 LR = 0.0001
 DATASET_SR = 16_000
-BATCH_SIZE = 320
+BATCH_SIZE = 400
 DEVICE     = "cuda" #"cpu"
-NUM_EPOCHS = 250
+NUM_EPOCHS = 1000
 HUBERT_SR  = 16_000
 HUBERT_PRETRAIN  = "/mnt/storage/kocharyan/hfmodels/content-vec-best" #"facebook/hubert-large-ls960-ft"
-CLUSTERS_PATH = "../../NIR/RuDevices_content_clusters/clusters.pt" #path("clusters/clusters.pt")
+CLUSTERS_PATH = "../../NIR/ruslan_content_clusters/clusters_250.pt" #path("clusters/clusters.pt")
 MODEL_TYPE = 1
 EXP_CODE = Exp.simple_transformer
 
@@ -121,7 +121,7 @@ def train_epoch(model: Union[Seq2Seq, SimpleSeq2SeqTransformer],
 
         optimizer.zero_grad()
         # print(lables.shape, lables[:, :-1].shape, lables[:, 1:].shape, logits.shape)
-        loss = loss_fn(logits, lables)
+        loss = loss_fn(logits, lables) # TODO: + 1/len(lables) чтобы длину учитывал ? 
         loss.backward()
         optimizer.step()
 
@@ -168,7 +168,7 @@ def init_dataset():
         return Text2SemanticCode(
             texts_path=path("rudevices_chunk"), contents_path=path("extracted_contents"), 
             clusters_path=CLUSTERS_PATH, tokenizer_conf=None, dsrate=DATASET_SR,
-            pre_calc_labels=True, labels_path="examples/build_labels/",
+            pre_calc_labels=True, labels_path="examples/build_labels_v2/",
         )
     elif EXP_CODE == Exp.yourtts_encoder:
         return Text2PseudoPhonemes(
@@ -380,16 +380,19 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
             # Декодируем
             if EXP_CODE == Exp.simple_transformer:
                 
+                # таргетный текст
                 print(f"Decoding: {target_text=}")
                 num_tokens = len(token_ids)
                 token_ids = torch.LongTensor([token_ids])
                 print(f"{token_ids.shape=}, {num_tokens=}")
                 src_mask = (torch.zeros(num_tokens, num_tokens)).type(torch.bool)
                 tgt_words_preds = new_greedy_decoding(
-                    model, src=token_ids, src_mask=src_mask, pad_symbol=pad,
-                    max_len=len(token_ids)+20, start_symbol=bos, end_symbol=eos,
+                        model, src=token_ids, src_mask=src_mask, pad_symbol=pad,
+                        max_len=len([*timesteps[i][1]]) + 20, start_symbol=bos, end_symbol=eos, # max_len=len([*timesteps[i][1]]) -> !
                     ).cpu().numpy()
+                print(f"{tgt_words_preds=}")
                 
+                # исходный текст
                 ref_text = src_words[i]
                 print(f"Decoding: {ref_text=}")
                 ref_text = dataset.tokenizer_encode(ref_text)
@@ -397,11 +400,13 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
                 src_mask = (torch.zeros(num_tokens, num_tokens)).type(torch.bool)
                 ref_text = torch.LongTensor([ref_text])
                 src_words_preds = new_greedy_decoding(
-                    model, src=ref_text, src_mask=src_mask, pad_symbol=pad,
-                    max_len=len(ref_text)+20, start_symbol=bos, end_symbol=eos,
+                        model, src=ref_text, src_mask=src_mask, pad_symbol=pad,
+                        max_len=len([*timesteps[i][1]]) + 20, start_symbol=bos, end_symbol=eos,  # max_len=len([*timesteps[i][1]]) -> !
                     ).cpu().numpy()
+                print(f"{src_words_preds=}")
                 
 
+                # центры кластеров
                 ref_text = timesteps[i][0]
                 ref_text_content = [*timesteps[i][1]]
                 print(f"Decoding: {ref_text=} (GT), range={timesteps[i][1]}")

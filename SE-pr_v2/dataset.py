@@ -15,7 +15,7 @@ from TTS.tts.configs.vits_config import VitsConfig
 from TTS.tts.models.vits import Vits, VitsArgs, VitsAudioConfig
 from TTS.tts.utils.text.tokenizer import TTSTokenizer
 
-from cutils import get_dataset_from_dir, exists_fileslist
+from cutils import get_dataset_from_dir, exists_fileslist, del_folder
 from clustering import PseudoPhonemes
 
 
@@ -190,12 +190,10 @@ class Text2SemanticCode(Dataset):
                 labels.append(pred_semantic[0])
             encoded_labels = self.semantic_codes_clusters.encode(labels)
             y = torch.LongTensor(encoded_labels)
-            print(f" Not pre calc")
         else:
             labels_p = Path(self.labels_path) / (Path(self.contents[index]).name + ".label")
             y = torch.load(labels_p, weights_only=True)["labels"]
             y = torch.LongTensor(y)
-            print(f" Pre calc")
 
         return {
             "tokens": x,
@@ -205,10 +203,10 @@ class Text2SemanticCode(Dataset):
         }
 
     def multiproc_labeling(self, n_jobs, save_to):
-        def _batch_labling(chunk, pbar):
+        def _batch_labling(chunk, pbar): #TODO: Переделать (нужно передавать заданный батч)
             for i in tqdm(chunk, position=pbar):
                 content = torch.load(self.contents[i], weights_only=True)
-                content = content["content"].squeeze(0).numpy()
+                content = content["content"].squeeze(0).numpy().T
                 preds = self.semantic_codes_clusters.predict_cluster_center(content)
                 preds = self.semantic_codes_clusters.encode(preds)
                 fname = Path(self.contents[i]).name + '.label'
@@ -290,20 +288,26 @@ class Text2SemanticCode(Dataset):
     def get_contents_centers(self, contents, idxs):
 
         contents = contents.cpu()
-        print(f"{contents.shape=}, {contents[:, idxs].shape=}")
-        contents = contents[:, idxs]
-        contents = contents.squeeze(0).numpy()
+        contents = contents.squeeze(0).numpy().T
         contents = contents.astype(np.float32)
 
-        y = []
-        # centers = []
-        for semantic in contents:
-            semantic = semantic.reshape(1, -1)
-            pred_semantic = self.semantic_codes_clusters.predict_cluster_center(semantic)
-            # center = self.semantic_codes_clusters.get_cluster_center(semantic)
-            y.append(pred_semantic[0])
-            # centers.append(center)
+        print(f"{contents.shape=}, {contents[idxs, :].shape=}")
+        contents = contents[idxs, :]
+
+        print("get_contents_centers", contents.shape)
+
+        y = self.semantic_codes_clusters.predict_cluster_center(contents)
         y = self.semantic_codes_clusters.encode(y)
+
+        # y = []
+        # # centers = []
+        # for semantic in contents:
+        #     semantic = semantic.reshape(1, -1)
+        #     pred_semantic = self.semantic_codes_clusters.predict_cluster_center(semantic)
+        #     # center = self.semantic_codes_clusters.get_cluster_center(semantic)
+        #     y.append(pred_semantic[0])
+        #     # centers.append(center)
+        # y = self.semantic_codes_clusters.encode(y)
         
         return y
     
@@ -513,4 +517,15 @@ class Text2PseudoPhonemes(Dataset):
 
         self.pad_id = self.tokenizer.pad_id
         return 
-    
+
+
+
+if __name__ == "__main__":
+    del_folder("examples/build_labels_ruslan/")
+    clusters_path = "../../NIR/ruslan_content_clusters/clusters_250.pt"
+    dataset = Text2SemanticCode(
+            texts_path="examples/rudevices_chunk", contents_path="examples/extracted_contents_v2", # Contents todo
+            clusters_path=clusters_path, tokenizer_conf=None, dsrate=16_000, pre_calc_labels=True, 
+            labels_path="examples/build_labels_v2/"
+        )
+    dataset.multiproc_labeling(10, "examples/build_labels_v2/")

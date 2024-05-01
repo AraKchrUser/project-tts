@@ -1,0 +1,175 @@
+[22:35:50] WARNING  [22:35:50]                                   warnings.py:109
+                    /mnt/driveb/kocharyan/virtual_environments/s                
+                    uperenv/lib/python3.10/site-packages/pyannot                
+                    e/audio/core/io.py:43: UserWarning:                         
+                    torchaudio._backend.set_audio_backend has                   
+                    been deprecated. With dispatcher enabled,                   
+                    this function is no-op. You can remove the                  
+                    function call.                                              
+                      torchaudio.set_audio_backend("soundfile")                 
+                                                                                
+[22:36:00] WARNING  [22:36:00]                                   warnings.py:109
+                    /mnt/driveb/kocharyan/virtual_environments/s                
+                    uperenv/lib/python3.10/site-packages/pyannot                
+                    e/audio/core/io.py:43: UserWarning:                         
+                    torchaudio._backend.set_audio_backend has                   
+                    been deprecated. With dispatcher enabled,                   
+                    this function is no-op. You can remove the                  
+                    function call.                                              
+                      torchaudio.set_audio_backend("soundfile")                 
+                                                                                
+[22:36:00] WARNING  [22:36:00]                                   warnings.py:109
+                    /mnt/driveb/kocharyan/virtual_environments/s                
+                    uperenv/lib/python3.10/site-packages/pyannot                
+                    e/audio/core/io.py:43: UserWarning:                         
+                    torchaudio._backend.set_audio_backend has                   
+                    been deprecated. With dispatcher enabled,                   
+                    this function is no-op. You can remove the                  
+                    function call.                                              
+                      torchaudio.set_audio_backend("soundfile")                 
+                                                                                
+[22:36:00] WARNING  [22:36:00]                                   warnings.py:109
+                    /mnt/driveb/kocharyan/virtual_environments/s                
+                    uperenv/lib/python3.10/site-packages/pyannot                
+                    e/audio/core/io.py:43: UserWarning:                         
+                    torchaudio._backend.set_audio_backend has                   
+                    been deprecated. With dispatcher enabled,                   
+                    this function is no-op. You can remove the                  
+                    function call.                                              
+                      torchaudio.set_audio_backend("soundfile")                 
+                                                                                
+[22:36:00] WARNING  [22:36:00]                                   warnings.py:109
+                    /mnt/driveb/kocharyan/virtual_environments/s                
+                    uperenv/lib/python3.10/site-packages/pyannot                
+                    e/audio/core/io.py:43: UserWarning:                         
+                    torchaudio._backend.set_audio_backend has                   
+                    been deprecated. With dispatcher enabled,                   
+                    this function is no-op. You can remove the                  
+                    function call.                                              
+                      torchaudio.set_audio_backend("soundfile")                 
+                                                                                
+[22:36:00] WARNING  [22:36:00]                                   warnings.py:109
+                    /mnt/driveb/kocharyan/virtual_environments/s                
+                    uperenv/lib/python3.10/site-packages/pyannot                
+                    e/audio/core/io.py:43: UserWarning:                         
+                    torchaudio._backend.set_audio_backend has                   
+                    been deprecated. With dispatcher enabled,                   
+                    this function is no-op. You can remove the                  
+                    function call.                                              
+                      torchaudio.set_audio_backend("soundfile")                 
+                                                                                
+[22:36:06] INFO     [22:36:06] Lightning automatically upgraded     utils.py:154
+                    your loaded checkpoint from v1.5.4 to v2.2.1.               
+                    To apply the upgrade to your files permanently,             
+                    run `python -m                                              
+                    pytorch_lightning.utilities.upgrade_checkpoint              
+                    ../../../../../home/stc/.cache/torch/whisperx-v             
+                    ad-segmentation.bin`                                        
+[22:36:06] INFO     [22:36:06] Lightning automatically upgraded     utils.py:154
+                    your loaded checkpoint from v1.5.4 to v2.2.1.               
+                    To apply the upgrade to your files permanently,             
+                    run `python -m                                              
+                    pytorch_lightning.utilities.upgrade_checkpoint              
+                    ../../../../../home/stc/.cache/torch/whisperx-v             
+                    ad-segmentation.bin`                                        
+[22:36:06] INFO     [22:36:06] Lightning automatically upgraded     utils.py:154
+                    your loaded checkpoint from v1.5.4 to v2.2.1.               
+                    To apply the upgrade to your files permanently,             
+                    run `python -m                                              
+                    pytorch_lightning.utilities.upgrade_checkpoint              
+                    ../../../../../home/stc/.cache/torch/whisperx-v             
+                    ad-segmentation.bin`                                        
+[22:36:06] INFO     [22:36:06] Lightning automatically upgraded     utils.py:154
+                    your loaded checkpoint from v1.5.4 to v2.2.1.               
+                    To apply the upgrade to your files permanently,             
+                    run `python -m                                              
+                    pytorch_lightning.utilities.upgrade_checkpoint              
+                    ../../../../../home/stc/.cache/torch/whisperx-v             
+                    ad-segmentation.bin`                                        
+[22:36:06] INFO     [22:36:06] Lightning automatically upgraded     utils.py:154
+                    your loaded checkpoint from v1.5.4 to v2.2.1.               
+                    To apply the upgrade to your files permanently,             
+                    run `python -m                                              
+                    pytorch_lightning.utilities.upgrade_checkpoint              
+                    ../../../../../home/stc/.cache/torch/whisperx-v             
+                    ad-segmentation.bin`                                        
+Some weights of the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ were not used when initializing Wav2Vec2ForCTC: ['wav2vec2.encoder.pos_conv_embed.conv.weight_g', 'wav2vec2.encoder.pos_conv_embed.conv.weight_v']
+- This IS expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of Wav2Vec2ForCTC were not initialized from the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ and are newly initialized: ['wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original0', 'wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original1']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ were not used when initializing Wav2Vec2ForCTC: ['wav2vec2.encoder.pos_conv_embed.conv.weight_g', 'wav2vec2.encoder.pos_conv_embed.conv.weight_v']
+- This IS expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of Wav2Vec2ForCTC were not initialized from the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ and are newly initialized: ['wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original0', 'wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original1']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ were not used when initializing Wav2Vec2ForCTC: ['wav2vec2.encoder.pos_conv_embed.conv.weight_g', 'wav2vec2.encoder.pos_conv_embed.conv.weight_v']
+- This IS expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of Wav2Vec2ForCTC were not initialized from the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ and are newly initialized: ['wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original0', 'wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original1']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ were not used when initializing Wav2Vec2ForCTC: ['wav2vec2.encoder.pos_conv_embed.conv.weight_g', 'wav2vec2.encoder.pos_conv_embed.conv.weight_v']
+- This IS expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of Wav2Vec2ForCTC were not initialized from the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ and are newly initialized: ['wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original0', 'wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original1']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+Some weights of the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ were not used when initializing Wav2Vec2ForCTC: ['wav2vec2.encoder.pos_conv_embed.conv.weight_g', 'wav2vec2.encoder.pos_conv_embed.conv.weight_v']
+- This IS expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing Wav2Vec2ForCTC from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of Wav2Vec2ForCTC were not initialized from the model checkpoint at /mnt/storage/kocharyan/hfmodels/wav2vec2-large-xlsr-53-russian/ and are newly initialized: ['wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original0', 'wav2vec2.encoder.pos_conv_embed.conv.parametrizations.weight.original1']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+joblib.externals.loky.process_executor._RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/externals/loky/process_executor.py", line 463, in _process_worker
+    r = call_item()
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/externals/loky/process_executor.py", line 291, in __call__
+    return self.fn(*self.args, **self.kwargs)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/parallel.py", line 589, in __call__
+    return [func(*args, **kwargs)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/parallel.py", line 589, in <listcomp>
+    return [func(*args, **kwargs)
+  File "/mnt/storage/kocharyan/project-tts/SE-pr_v2/concat_ssl_syntes.py", line 35, in _batch_whisper_infer
+    whisperx_model = WhisperX()
+  File "/mnt/storage/kocharyan/project-tts/SE-pr_v2/models.py", line 220, in __init__
+    align_model, metadata = whisperx.load_align_model(
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/whisperx/alignment.py", line 88, in load_align_model
+    align_model = align_model.to(device)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/transformers/modeling_utils.py", line 2576, in to
+    return super().to(*args, **kwargs)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1160, in to
+    return self._apply(convert)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 810, in _apply
+    module._apply(fn)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 810, in _apply
+    module._apply(fn)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 810, in _apply
+    module._apply(fn)
+  [Previous line repeated 3 more times]
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 833, in _apply
+    param_applied = fn(param)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1158, in convert
+    return t.to(device, dtype if t.is_floating_point() or t.is_complex() else None, non_blocking)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 16.00 MiB. GPU 0 has a total capacty of 23.68 GiB of which 19.00 MiB is free. Process 10683 has 4.96 GiB memory in use. Including non-PyTorch memory, this process has 4.62 GiB memory in use. Process 10687 has 4.96 GiB memory in use. Process 10684 has 4.55 GiB memory in use. Process 10686 has 4.55 GiB memory in use. Of the allocated memory 472.88 MiB is allocated by PyTorch, and 1.12 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+"""
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/storage/kocharyan/project-tts/SE-pr_v2/concat_ssl_syntes.py", line 81, in <module>
+    create_words_dataset(
+  File "/mnt/storage/kocharyan/project-tts/SE-pr_v2/concat_ssl_syntes.py", line 72, in create_words_dataset
+    Parallel(n_jobs=njobs)(delayed(_batch_whisper_infer)(
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/parallel.py", line 1952, in __call__
+    return output if self.return_generator else list(output)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/parallel.py", line 1595, in _get_outputs
+    yield from self._retrieve()
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/parallel.py", line 1699, in _retrieve
+    self._raise_error_fast()
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/parallel.py", line 1734, in _raise_error_fast
+    error_job.get_result(self.timeout)
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/parallel.py", line 736, in get_result
+    return self._return_or_raise()
+  File "/mnt/driveb/kocharyan/virtual_environments/superenv/lib/python3.10/site-packages/joblib/parallel.py", line 754, in _return_or_raise
+    raise self._result
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 16.00 MiB. GPU 0 has a total capacty of 23.68 GiB of which 19.00 MiB is free. Process 10683 has 4.96 GiB memory in use. Including non-PyTorch memory, this process has 4.62 GiB memory in use. Process 10687 has 4.96 GiB memory in use. Process 10684 has 4.55 GiB memory in use. Process 10686 has 4.55 GiB memory in use. Of the allocated memory 472.88 MiB is allocated by PyTorch, and 1.12 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
