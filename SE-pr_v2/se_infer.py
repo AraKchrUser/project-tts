@@ -15,58 +15,60 @@ from so_vits_svc_fork.utils import repeat_expand_2d, get_content
 
 VERSION = 1
 
+class AbstractVC(Svc):
 
-class SvcSpeechEdit(Svc):
-
-    def infer_silence(
-            self, audio, *,
-            # replaced data info
-            src_idxs, tgt_contents,
-            # svc config
-            speaker, transpose, auto_predict_f0=False,
-            cluster_infer_ratio=0, noise_scale=0.4, f0_method: Literal[
-                            "crepe", "crepe-tiny", 
-                            "parselmouth", "dio", "harvest",
-                        ] = "dio",
-            # slice config
-            db_thresh=-40, pad_seconds=0.5, chunk_seconds=0.5,
-            absolute_thresh=False, max_chunk_seconds=40,
+        def infer_silence(
+                self, audio, *,
+                # replaced data info
+                src_idxs, tgt_contents,
+                # svc config
+                speaker, transpose, auto_predict_f0=False,
+                cluster_infer_ratio=0, noise_scale=0.4, f0_method: Literal[
+                                "crepe", "crepe-tiny", 
+                                "parselmouth", "dio", "harvest",
+                            ] = "dio",
+                # slice config
+                db_thresh=-40, pad_seconds=0.5, chunk_seconds=0.5,
+                absolute_thresh=False, max_chunk_seconds=40,
             ): # -> np.ndarray
-        sr = self.target_sample
-        out = np.array([], dtype=np.float32)
-        chunk_length_min = chunk_length_min = (int(min(
-            sr / so_vits_svc_fork.f0.f0_min * 20 + 1, chunk_seconds * sr,
-            )) // 2)
-        splited_silence = split_silence(
-            audio, top_db=-db_thresh, frame_length=chunk_length_min * 2, 
-            hop_length=chunk_length_min, ref=1 if absolute_thresh else np.max, 
-            max_chunk_length=int(max_chunk_seconds * sr),
-            )
-        for chunk in splited_silence:
-            if not chunk.is_speech:
-                audio_chunk_infer = np.zeros_like(chunk.audio)
-            else:
-                pad_len = int(sr * pad_seconds)
-                audio_chunk_pad = np.concatenate([
-                    np.zeros([pad_len], dtype=np.float32), 
-                    chunk.audio, 
-                    np.zeros([pad_len], dtype=np.float32),
-                    ])
-                audio_chunk_padded = self.infer(
-                    speaker, transpose, audio_chunk_pad, 
-                    cluster_infer_ratio=cluster_infer_ratio,
-                    auto_predict_f0=auto_predict_f0,
-                    noise_scale=noise_scale, f0_method=f0_method,
-                    replaced_contents_info=(src_idxs, tgt_contents),
-                    )[0].cpu().numpy()
-                pad_len = int(self.target_sample * pad_seconds)
-                cut_len_2 = (len(audio_chunk_padded) - len(chunk.audio)) // 2
-                audio_chunk_infer = audio_chunk_padded[cut_len_2 : cut_len_2 + len(chunk.audio)]
-                torch.cuda.empty_cache()
+            sr = self.target_sample
+            out = np.array([], dtype=np.float32)
+            chunk_length_min = chunk_length_min = (int(min(
+                sr / so_vits_svc_fork.f0.f0_min * 20 + 1, chunk_seconds * sr,
+                )) // 2)
+            splited_silence = split_silence(
+                audio, top_db=-db_thresh, frame_length=chunk_length_min * 2, 
+                hop_length=chunk_length_min, ref=1 if absolute_thresh else np.max, 
+                max_chunk_length=int(max_chunk_seconds * sr),
+                )
+            for chunk in splited_silence:
+                if not chunk.is_speech:
+                    audio_chunk_infer = np.zeros_like(chunk.audio)
+                else:
+                    pad_len = int(sr * pad_seconds)
+                    audio_chunk_pad = np.concatenate([
+                        np.zeros([pad_len], dtype=np.float32), 
+                        chunk.audio, 
+                        np.zeros([pad_len], dtype=np.float32),
+                        ])
+                    audio_chunk_padded = self.infer(
+                        speaker, transpose, audio_chunk_pad, 
+                        cluster_infer_ratio=cluster_infer_ratio,
+                        auto_predict_f0=auto_predict_f0,
+                        noise_scale=noise_scale, f0_method=f0_method,
+                        replaced_contents_info=(src_idxs, tgt_contents),
+                        )[0].cpu().numpy()
+                    pad_len = int(self.target_sample * pad_seconds)
+                    cut_len_2 = (len(audio_chunk_padded) - len(chunk.audio)) // 2
+                    audio_chunk_infer = audio_chunk_padded[cut_len_2 : cut_len_2 + len(chunk.audio)]
+                    torch.cuda.empty_cache()
+                
+                out = np.concatenate([out, audio_chunk_infer])
             
-            out = np.concatenate([out, audio_chunk_infer])
-        
-        return out[: audio.shape[0]]
+            return out[: audio.shape[0]]
+
+
+class SvcSpeechEdit(AbstractVC):
 
     
     def infer(self, speaker, transpose, audio, 
@@ -95,7 +97,8 @@ class SvcSpeechEdit(Svc):
         sid = torch.LongTensor([int(speaker_id)])
         sid = sid.to(self.device).unsqueeze(0)
 
-        idxs, contents = replaced_contents_info
+        if replaced_contents_info is not None:
+            idxs, contents = replaced_contents_info
         
         if VERSION == 1:
             print(f"VERSION {VERSION}")
@@ -228,7 +231,7 @@ class SvcSpeechEdit(Svc):
 
     def get_unit_f0(
         self,
-        c: Any, 
+        c: Optional[Any], 
         audio: np.array,
         tran: int,
         cluster_infer_ratio: float,
@@ -251,7 +254,7 @@ class SvcSpeechEdit(Svc):
         f0 = f0.unsqueeze(0)
         uv = uv.unsqueeze(0)
 
-        if VERSION == 1:
+        if c is None:
             c = get_content(
                     self.hubert_model,
                     audio,
@@ -277,7 +280,7 @@ class SvcSpeechEdit(Svc):
         # cluster_c = cluster_model.get_cluster_center(c.cpu().numpy().T).T
         # cluster_c = torch.FloatTensor(cluster_c).to(self.device)
         # c = cluster_infer_ratio * cluster_c + (1 - cluster_infer_ratio) * c
-        print(f"Add clusters, {cluster_infer_ratio=}")
+        # print(f"Add clusters, {cluster_infer_ratio=}")
 
         c = c.unsqueeze(0)
         return c, f0, uv
@@ -289,6 +292,8 @@ class SVCInfer:
     def __init__(self, model_path: Union[Path, str], conf_path: Union[Path, str],
                  auto_predict_f0: bool, noise_scale: float=.4, device: str="cuda",
                  f0_method: Literal["crepe", "crepe-tiny", "parselmouth", "dio", "harvest"]="dio",
+                 svc_model: Optional[SvcSpeechEdit]=None, speaker_cluster_path: Optional[str]=None,
+                 cluster_infer_ratio: float=.0, 
                  ):
         
         self.auto_predict_f0 = auto_predict_f0
@@ -297,10 +302,11 @@ class SVCInfer:
         self.device = device
 
         # Используется для нахождения trade-off между схожестью 
-        # спикеров и понятностью речи (тут не используется)
-        self.speaker_cluster_path = None
+        # спикеров и понятностью речи
+        self.speaker_cluster_path = speaker_cluster_path
+        self.cluster_infer_ratio = cluster_infer_ratio
         self.transpose = 0
-        self.cluster_infer_ratio = 0
+        
         # Slice confs
         self.db_thresh = -40
         self.pad_seconds = .5
@@ -311,10 +317,13 @@ class SVCInfer:
         model_path = Path(model_path)
         conf_path = Path(conf_path)
 
-        self.svc_model = SvcSpeechEdit(
-            net_g_path=model_path.as_posix(), config_path=conf_path.as_posix(), 
-            cluster_model_path=None, device=device,
-            )
+        if svc_model is None:
+            self.svc_model = SvcSpeechEdit(
+                net_g_path=model_path.as_posix(), config_path=conf_path.as_posix(), 
+                cluster_model_path=None, device=device,
+                )
+        else:
+            self.svc_model = svc_model
 
 
     @staticmethod

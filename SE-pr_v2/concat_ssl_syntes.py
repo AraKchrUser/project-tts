@@ -11,7 +11,7 @@ import numpy as np
 from cutils import get_dataset_from_dir, wip_memory, del_folder
 from calc_content import _one_item_hubert_infer, get_hubert_model
 from models import WhisperX
-
+from se_infer import AbstractVC, SVCInfer
 
 def timesteps2content(timesteps, content, f0, save_to):
     # assert content.shape[-1] == f0.shape[-1] == max([max(idxs) for _, idxs in timesteps.values()])
@@ -90,8 +90,27 @@ def create_words_dataset(
     return
 
 
-class ConcatVITSInfer:
+
+class ConcatVC:
+    # Нужно переделать (проблемы с передачей кластеров)
     pass
+
+
+
+class ConcatVCInfer(SVCInfer):
+    # Тут обязательно используем speaker_cluster_path/cluster_infer_ratio
+    # передаем кастомную svc_model
+    
+    @staticmethod
+    def get_db_words_stats(db_path: str, freq_top: int=20): #TODO: CHECK
+        db_path = Path(db_path)
+        words = {word: 0 for word in db_path.iterdir()}
+        for word in words:
+            words[word] = len([*word.iterdir()])
+        top_list = dict(sorted(words.items(), lambda x: -x[1])[:freq_top])
+        return {"words_count": len(words), "top_list": top_list}
+    
+
 
 
 if __name__ == "__main__":
@@ -101,4 +120,4 @@ if __name__ == "__main__":
         "../../NIR/ruslan_word_database/", 3, "../../hfmodels/content-vec-best",
     )
 
-    # Изначально 638/7400 [14:53<2:39:50 (3 потока)
+    
