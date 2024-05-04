@@ -442,7 +442,9 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     infer_vc = SVCInfer(
             model_path=MODEL_PATH, conf_path=CONFIG_PATH, 
             auto_predict_f0=True, f0_method="dio",
-            device=DEVICE, noise_scale=.4,
+            device=DEVICE, noise_scale=.4, 
+            # Add params
+            cluster_path="../../NIR/ruslan_content_clusters/clusters_250.pt", cluster_infer_ratio=1.
         )
     
     # Для простоты:
@@ -459,7 +461,7 @@ def speech_editing(audio_f, src_text, target_text, dataset, model=None): #TODO
     print("=====> SVCInfer works ...")
     infer_vc.inference(
             input_paths=INPUT, output_dir=OUT_DIR, speaker=None, 
-            src_idxs=src_idxs, tgt_contents=tgt_contents,
+            src_idxs=None, tgt_contents=None, # src_idxs=src_idxs, tgt_contents=tgt_contents,
         )
 
     # print(all_preds)

@@ -8,8 +8,24 @@ from string import punctuation
 import numpy as np
 import torch
 import gc
+import time
+import math
 # from directory_tree import display_tree
 # import wget
+
+
+
+def asMinutes(s):
+    m = math.floor(s / 60)
+    s -= m * 60
+    return '%dm%ds' % (m, s)
+
+def timeSince(since, percent):
+    now = time.time()
+    s = now - since
+    es = s / (percent)
+    rs = es - s
+    return asMinutes(s), asMinutes(rs)
 
 
 def wip_memory(model):

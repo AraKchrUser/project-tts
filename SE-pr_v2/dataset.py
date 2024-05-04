@@ -278,6 +278,7 @@ class Text2SemanticCode(Dataset):
             "tokens_padded": tokens_padded, 
             "lables": lables_padded, 
             "text_lens": text_lens, 
+            "text": batch["text"],
             #TODO: create masks in train
             # "src_padding_mask": tokens_padded == t_pad_id, # .transpose(0, 1) ?
             # "tgt_padding_mask": lables_padded == s_pad_id,
