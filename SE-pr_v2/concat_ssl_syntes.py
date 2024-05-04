@@ -352,10 +352,10 @@ if __name__ == "__main__":
     #     "../../sambashare/ruslan_ds/RUSLAN/", 22_000, 
     #     "../../NIR/ruslan_word_database/", 3, "../../hfmodels/content-vec-best",
     # )
-    create_words_dataset( #TODO: rudevices
-        "../../NIR/RuDevices/", 16_000, 
-        "../../NIR/word_database/", 3, "../../hfmodels/content-vec-best",
-    )
+    # create_words_dataset( #TODO: rudevices
+    #     "../../NIR/RuDevices/", 16_000, 
+    #     "../../NIR/word_database/", 3, "../../hfmodels/content-vec-best",
+    # )
     
     # res = ConcatVCInfer.get_db_words_stats("../../NIR/ruslan_word_database/")
     # print(res["words_count"])
@@ -363,29 +363,29 @@ if __name__ == "__main__":
 
     # ConcatVCInfer.get_contents("../../NIR/ruslan_word_database/", "падение который видел в конце графика")
 
-    # NUM = 1225
-    # CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
-    # MODEL_PATH = f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{NUM}.pth"
-    # OUT_DIR = "examples/res/"
-    # bp = "../../NIR/RuDevices/2/b/"
-    # INPUT = [bp+'dd9262b6-bb56-4ffa-9458-2790458ce27e.wav'] #"скачок который видел в начале графика"
-    # text = ["совсем скоро я увижу отца"] #["падение который видел в конце графика"]
+    NUM = 1225
+    CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
+    MODEL_PATH = f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{NUM}.pth"
+    OUT_DIR = "examples/res/"
+    bp = "../../NIR/RuDevices/2/b/"
+    INPUT = [bp+'dd9262b6-bb56-4ffa-9458-2790458ce27e.wav'] #"скачок который видел в начале графика"
+    text = ["падение который видел в конце графика"] #["совсем скоро я увижу отца"] #
 
-    # vc = ConcatVCInfer(
-    #     model_path=MODEL_PATH, conf_path=CONFIG_PATH, 
-    #     auto_predict_f0=True, device="cuda", cluster_infer_ratio=0.,
-    #     cluster_path="../../NIR/ruslan_content_clusters/clusters_250.pt",
-    #     database="../../NIR/ruslan_word_database/"
-    # )
-    # vc.svc_model = ConcatVC(
-    #         net_g_path=MODEL_PATH, 
-    #         config_path=CONFIG_PATH, 
-    #         device="cuda",
-    #         )
-    # vc.inference(
-    #         input_paths=INPUT, output_dir=OUT_DIR, speaker=None, # т.к. число speaker = 1
-    #         tgt_texts=text, 
-    #     )
+    vc = ConcatVCInfer(
+        model_path=MODEL_PATH, conf_path=CONFIG_PATH, 
+        auto_predict_f0=True, device="cuda", cluster_infer_ratio=0.,
+        cluster_path="../../NIR/ruslan_content_clusters/clusters_10000.pt",
+        database="../../NIR/ruslan_word_database/"
+    )
+    vc.svc_model = ConcatVC(
+            net_g_path=MODEL_PATH, 
+            config_path=CONFIG_PATH, 
+            device="cuda",
+            )
+    vc.inference(
+            input_paths=INPUT, output_dir=OUT_DIR, speaker=None, # т.к. число speaker = 1
+            tgt_texts=text, 
+        )
     
 
     

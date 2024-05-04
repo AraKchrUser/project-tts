@@ -93,7 +93,7 @@ class RNNTrainer:
     def __init__(
             self, texts_path, contents_path, clusters_path, sr, labels_path,
             ckpt_save_to, batch_size=320, lr=0.001, n_epochs=500, print_every=50, 
-            plot_every=50, device="cpu", hidden_size=128, gen_max_len=50,
+            plot_every=50, device="cpu", hidden_size=128, gen_max_len=300,
             ):
         self.lr = lr
         self.batch_size = batch_size
@@ -109,16 +109,17 @@ class RNNTrainer:
             texts_path, contents_path, 
             clusters_path, sr, labels_path,
             )
+        self.dataset = dataset
         self.train_loader = train
         self.val_loader = val
         #TODO
-        pad = dataset.semantic_codes_clusters.pad_id
-        eos = dataset.semantic_codes_clusters.eos_id
-        bos = dataset.semantic_codes_clusters.bos_id
+        self.pad = dataset.semantic_codes_clusters.pad_id
+        self.eos = dataset.semantic_codes_clusters.eos_id
+        self.bos = dataset.semantic_codes_clusters.bos_id
         src_vocab_size = dataset.text_tokenizer.size
         tgt_vocab_size = dataset.semantic_codes_clusters.vocab_size
         self.encoder = EncoderRNN(src_vocab_size, hidden_size).to(device)
-        self.decoder = DecoderRNN(hidden_size, tgt_vocab_size, bos, device, gen_max_len).to(device)
+        self.decoder = DecoderRNN(hidden_size, tgt_vocab_size, self.bos, device, gen_max_len).to(device)
         # self.max_len = gen_max_len
     
     def get_train_dataloader(self, texts_path, contents_path, clusters_path, sr, labels_path):
@@ -129,14 +130,14 @@ class RNNTrainer:
         )
         train_set, val_set = torch.utils.data.random_split(dataset, [len(dataset)-10, 10])
         train_loader = DataLoader(
-            train_set, batch_size=self.batch_size, 
-            collate_fn=dataset.collate_fn,
+            train_set, batch_size=self.batch_size, num_workers=3,
+            collate_fn=dataset.collate_fn, pin_memory=True,
             )
-        test_loader = DataLoader(
-            val_set, batch_size=self.batch_size, 
-            collate_fn=dataset.collate_fn,
+        val_loader = DataLoader(
+            val_set, batch_size=1, pin_memory=True,
+            collate_fn=dataset.collate_fn, num_workers=3,
             )
-        return dataset, train_loader, test_loader
+        return dataset, train_loader, val_loader
        
 
     def _init_train_params(self):
@@ -179,7 +180,7 @@ class RNNTrainer:
     
     def train(self, plotting=False):
         start = time.time()
-        plot_losses = []
+        self.plot_losses = []
         print_loss_total = 0
         plot_loss_total = 0
 
@@ -195,20 +196,58 @@ class RNNTrainer:
                 print_loss_total = 0
                 t1, t2 = timeSince(start, epoch / self.n_epochs)
                 print(f"time: {t1} ({t2}),  epoch: {epoch} ({epoch / self.n_epochs * 100}%), loss: {print_loss_avg}")
+
+                self.evaluate(epoch, True)
             
             if epoch % self.plot_every == 0:
                 plot_loss_avg = plot_loss_total / self.plot_every
-                plot_losses.append(plot_loss_avg)
+                self.plot_losses.append(plot_loss_avg)
                 plot_loss_total = 0
         
-            if plotting: self._plot(plot_losses)
+            if plotting: self._plot(self.plot_losses)
             torch.save(self.encoder.state_dict(),  self.save_dir / "encoder.pkl")
             torch.save(self.decoder.state_dict(),  self.save_dir / "decoder.pkl")
     
 
-    def evaluate(self):
-        with torch.no_grad():
-            pass
+    def evaluate(self, epoch, save): #TODO: #self.save_dir
+        res = [] 
+        for item in self.val_loader:
+            with torch.no_grad():
+
+                tokens_padded = item["tokens_padded"].to(self.device)
+                lables = item['lables']
+                text = item['text']
+
+                enc_out, enc_hidden = self.encoder(tokens_padded)
+                dec_out, _, _ = self.decoder(enc_out, enc_hidden)
+
+                # loss = self.criterion(dec_out.view(-1, dec_out.size(-1)), lables.view(-1))
+
+                _, topi = dec_out.topk(1)
+                decoded_ids = topi.squeeze()
+                decoded_words = []
+                for idx in decoded_ids:
+                    if idx.item() == self.eos:
+                        break
+                    decoded_words.append(idx.item())
+
+                decoder = self.dataset.semantic_codes_clusters
+                decoded_words = decoder.decode(decoded_words)
+                res.append({
+                    "text": text,
+                    "lables": np.array(decoder.decode(lables.numpy()[0])),
+                    "decoded_words": np.array(decoded_words),
+                    "loss": np.mean(self.plot_losses),
+                })
+        
+        if save: 
+            saved = self.save_dir / f"evals/epoch_{epoch}" 
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            print(saved)
+            with saved.open("wb") as f:
+                torch.save({"res": res}, f)
+        
+        return res
 
 
     def _plot(self, points):
