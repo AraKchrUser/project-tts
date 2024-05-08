@@ -122,7 +122,7 @@ class ConcatVC(AbstractVC):
               cluster_infer_ratio, auto_predict_f0, noise_scale, 
               f0_method, cluster_model, tgt_texts, database,
               ):
-        print("ConcatVC == infer")
+        
         audio = audio.astype(np.float32)
         if isinstance(speaker, int):
             if len(self.spk2id.__dict__) >= speaker:

@@ -393,7 +393,7 @@ class Text2PseudoPhonemes(Dataset):
         #     contents = contents.last_hidden_state
 
         # Была идея испольлзвать в качестве эмбеддингов для декодинга pseudo_ph_embeds (эмбеддинги центры кластеров)
-        # Но возникли трудности 
+        # Но не получилось реализовать 
         y = [self.gen_bos]
         # pseudo_ph_embeds = []
         contents = torch.load(self.contents[index], weights_only=True)

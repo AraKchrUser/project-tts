@@ -59,6 +59,7 @@ def _preprocess_one(
     """Preprocess one audio file."""
 
     try:
+        
         audio, sr = librosa.load(input_path, sr=sr, mono=True)
 
     # Audioread is the last backend it will attempt, so this is the exception thrown on failure
@@ -103,12 +104,19 @@ def preprocess_resample(
     output_dir = Path(output_dir)
     """Preprocess audio files in input_dir and save them to output_dir."""
 
+    print("Starting preprocess_resample .....")
+
     out_paths = []
     in_paths = list(input_dir.rglob("*.*"))
+
+    print("Files is ready!")
+    # print(in_paths)
+
     if not in_paths:
         raise ValueError(f"No audio files found in {input_dir}")
     for in_path in in_paths:
         in_path_relative = in_path.relative_to(input_dir)
+        # print(in_path_relative)
         if not in_path.is_absolute() and is_relative_to(
             in_path, Path("dataset_raw") / "44k"
         ):
@@ -121,6 +129,7 @@ def preprocess_resample(
             in_path_relative = new_in_path_relative
 
         if len(in_path_relative.parts) < 2:
+            # print(in_path_relative)
             continue
         speaker_name = in_path_relative.parts[0]
         file_name = in_path_relative.with_suffix(".wav").name
@@ -130,6 +139,7 @@ def preprocess_resample(
         out_paths.append(out_path)
 
     in_and_out_paths = list(zip(in_paths, out_paths))
+    # print(in_and_out_paths)
 
     with tqdm_joblib(desc="Preprocessing", total=len(in_and_out_paths)):
         Parallel(n_jobs=n_jobs)(

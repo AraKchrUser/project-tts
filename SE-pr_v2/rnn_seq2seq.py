@@ -249,6 +249,31 @@ class RNNTrainer:
         
         return res
 
+    
+    def inference(self, ckpt_paths, text):
+        ckpt_paths = Path(ckpt_paths)
+        self.encoder.load_state_dict(torch.load(ckpt_paths/'encoder.pkl'))
+        self.decoder.load_state_dict(torch.load(ckpt_paths/'decoder.pkl'))
+        
+        token_ids = self.dataset.tokenizer_encode(text)
+        token_ids = torch.LongTensor([token_ids]).to(self.device)
+        with torch.no_grad():
+            enc_out, enc_hidden = self.encoder(token_ids)
+            dec_out, _, _ = self.decoder(enc_out, enc_hidden)
+
+            _, topi = dec_out.topk(1)
+            decoded_ids = topi.squeeze()
+            decoded_words = []
+            for idx in decoded_ids:
+                if idx.item() == self.eos:
+                    break
+                decoded_words.append(idx.item())
+            
+            decoder = self.dataset.semantic_codes_clusters
+            decoded_words = decoder.decode(decoded_words)
+
+        return decoded_words
+
 
     def _plot(self, points):
         # in Jupyter use `%matplotlib inline`

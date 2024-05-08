@@ -60,10 +60,18 @@ def _process_one(
         audio,
         device,
         sr=sr,
-        legacy_final_proj=hps.data.get("contentvec_final_proj", True),
+        legacy_final_proj=True,#hps.data.get("contentvec_final_proj", True),
     )
     c = utils.repeat_expand_2d(c.squeeze(0), f0.shape[0])
     torch.cuda.empty_cache()
+    
+    # Quantization HuBERT content before learning
+    cluster_c = hps.clusters.get_cluster_center(c.cpu().numpy().T).T
+    cluster_c = torch.FloatTensor(cluster_c).to(device)
+    # print(f"{c.shape=} {cluster_c.shape=}")
+    # assert cluster_c.shape != c.shape
+    c = cluster_c
+    print("Clustering ...")
 
     # Compute spectrogram
     audio, sr = torchaudio.load(filepath)
@@ -105,7 +113,7 @@ def _process_one(
 def _process_batch(filepaths: Iterable[Path], pbar_position: int, **kwargs):
     hps = kwargs["hps"]
     content_model = utils.get_hubert_model(
-        get_optimal_device(), hps.data.get("contentvec_final_proj", True)
+        get_optimal_device(), True, #hps.data.get("contentvec_final_proj", True)
     )
 
     for filepath in tqdm(filepaths, position=pbar_position):
@@ -122,10 +130,18 @@ def preprocess_hubert_f0(
     n_jobs: int | None = None,
     f0_method: Literal["crepe", "crepe-tiny", "parselmouth", "dio", "harvest"] = "dio",
     force_rebuild: bool = False,
+    clusters_path: str = '',
 ):
     input_dir = Path(input_dir)
     config_path = Path(config_path)
     hps = utils.get_hparams(config_path)
+    
+    print('Start to hubert preprocess and quantization simple reprs')
+    from clustering import PseudoPhonemes
+    semantic_codes = PseudoPhonemes(clusters_path)
+    semantic_codes.build_clusters()
+    hps.clusters = semantic_codes
+
     if n_jobs is None:
         # add cpu_count() to avoid SIGKILL
         memory = get_total_gpu_memory("total")
