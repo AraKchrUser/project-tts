@@ -21,12 +21,17 @@ from so_vits.preprocessing.preprocess_resample import preprocess_resample
 from so_vits.preprocessing.preprocess_flist_config import preprocess_config
 # from so_vits_svc_fork.inference.core import Svc
 from so_vits.train import train
-from so_vits import f0
+from so_vits import f0 as f0_module
 from so_vits.inference.core import Svc, split_silence
 from so_vits.utils import get_content, repeat_expand_2d
 
 
 class QVITS(Svc):
+
+    # def __init__(self, *, net_g_path: Path | str, config_path: Path | str, device: torch.device | str | None = None, cluster_model_path: Path | str | None = None, half: bool = False):
+    #     super().__init__(net_g_path=net_g_path, config_path=config_path, device=device, cluster_model_path=cluster_model_path, half=half):
+    #     self.cluster_model_path = cluster_model_path
+
 
     def infer(self, speaker, audio, auto_predict_f0, f0_method, 
               cluster_model, transpose, noise_scale,): # pass clusters
@@ -73,7 +78,7 @@ class QVITS(Svc):
             sr = self.target_sample
             out = np.array([], dtype=np.float32)
             chunk_length_min = chunk_length_min = (int(min(
-                sr / f0.f0_min * 20 + 1, chunk_seconds * sr,
+                sr / f0_module.f0_min * 20 + 1, chunk_seconds * sr,
                 )) // 2)
             splited_silence = split_silence(
                 audio, top_db=-db_thresh, frame_length=chunk_length_min * 2, 
@@ -97,7 +102,7 @@ class QVITS(Svc):
                         np.zeros([pad_len], dtype=np.float32),
                         ])
                     audio_chunk_padded = self.infer(
-                        speaker=speaker, audop=audio_chunk_pad,
+                        speaker=speaker, audio=audio_chunk_pad,
                         auto_predict_f0=auto_predict_f0, 
                         f0_method=f0_method, cluster_model=cluster_model,
                         transpose=transpose, noise_scale=noise_scale,
@@ -111,13 +116,13 @@ class QVITS(Svc):
 
     def get_unit_f0(self, audio, speaker, f0_method,
                     transpose, cluster_model,): # pass clusters
-        f0 = f0.compute_f0(
+        f0 = f0_module.compute_f0(
             audio,
             sampling_rate=self.target_sample,
             hop_length=self.hop_size,
             method=f0_method,
         )
-        f0, uv = f0.interpolate_f0(f0)
+        f0, uv = f0_module.interpolate_f0(f0)
         f0 = torch.as_tensor(f0, dtype=self.dtype, device=self.device)
         uv = torch.as_tensor(uv, dtype=self.dtype, device=self.device)
         f0 = f0 * 2 ** (transpose / 12)
@@ -134,6 +139,7 @@ class QVITS(Svc):
         c = repeat_expand_2d(c.squeeze(0), f0.shape[1])
 
         # Quantization HuBERT content before infer
+        print("Quantization ....")
         cluster_c = cluster_model.get_cluster_center(c.cpu().numpy().T).T
         cluster_c = torch.FloatTensor(cluster_c).to(self.device)
         c = cluster_c
@@ -158,10 +164,7 @@ class QVITSInfer:
         self.device = device
         self.cluster_path = cluster_path
         self._init_additonal_params()
-        self.vc_model = QVITS(
-            net_g_path=model_path, config_path=conf_path, 
-            device=device, cluster_path=self.cluster_path, 
-        )
+        self.vc_model = QVITS(net_g_path=model_path, config_path=conf_path, device=device,)
         return
     
     def inference(self, input_paths: List[Union[Path, str]], 
@@ -170,7 +173,7 @@ class QVITSInfer:
         input_paths, output_paths = SVCInfer.prepare_data(input_paths, output_dir)
         pbar = tqdm(list(zip(input_paths, output_paths)), disable=len(input_paths) == 1)
         for input_path, output_path in pbar:
-            audio, _ = librosa.load(str(input_path), sr=self.svc_model.target_sample)
+            audio, _ = librosa.load(str(input_path), sr=self.vc_model.target_sample)
 
             audio = self.vc_model.infer_silence(
                     
@@ -209,6 +212,7 @@ def get_args():
     parser.add_argument("--pre_conf", action='store_true')
     parser.add_argument("--preproc", action='store_true')
     parser.add_argument("--train", action='store_true')
+    parser.add_argument("--inference", action='store_true')
 
     parser.add_argument("--input_dir", type=str)
     parser.add_argument("--output_dir", type=str)
@@ -283,3 +287,31 @@ if __name__ == "__main__":
                     shutil.copy(f, args.model_path / f.name)
         
         train(config_path=Path(args.config_path), model_path=args.model_path)
+    
+    if args.inference:
+        DEVICE="cuda"
+        # NUM = 1225
+        # CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
+        # MODEL_PATH = f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{NUM}.pth"
+        NUM = 1271
+        CONFIG_PATH = "/mnt/storage/kocharyan/q_ruslan/configs/44k/config.json"
+        MODEL_PATH = f"/mnt/storage/kocharyan/q_ruslan/logs/44k/G_{NUM}.pth"
+
+        OUT_DIR = "examples/res/"
+        bp = "../../NIR/RuDevices/2/b/"
+        INPUT = [bp+'dd9262b6-bb56-4ffa-9458-2790458ce27e.wav'] # "скачок который видел в начале графика"
+        text = ["падение который видел в конце графика"]
+
+        vc = QVITSInfer(
+            model_path=MODEL_PATH,
+            conf_path=CONFIG_PATH,
+            device=DEVICE,
+
+            auto_predict_f0=True, # True/False
+            f0_method="crepe", # crepe/dio/parselmouth/harvest/crepe-tiny
+            cluster_path="../../NIR/ruslan_content_clusters/clusters_250.pt",
+        )
+        vc.inference(input_paths=INPUT, output_dir=OUT_DIR, speaker=None)
+    
+    if args.speech_edit:
+        pass

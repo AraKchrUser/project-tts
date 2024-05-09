@@ -122,7 +122,6 @@ class ConcatVC(AbstractVC):
               cluster_infer_ratio, auto_predict_f0, noise_scale, 
               f0_method, cluster_model, tgt_texts, database,
               ):
-        
         audio = audio.astype(np.float32)
         if isinstance(speaker, int):
             if len(self.spk2id.__dict__) >= speaker:
@@ -222,7 +221,7 @@ class ConcatVC(AbstractVC):
                     cluster_infer_ratio: float, cluster_model: Optional[str],
                     speaker: int | str, # speaker-id (тут используется только 1 спикер)
                     f0_method: str="dio"):
-        print("ConcatVC == get_unit_f0")
+        print(f"{f0_method=}")
         f0 = so_vits_svc_fork.f0.compute_f0(
             audio,
             sampling_rate=self.target_sample,
@@ -363,24 +362,30 @@ if __name__ == "__main__":
 
     # ConcatVCInfer.get_contents("../../NIR/ruslan_word_database/", "падение который видел в конце графика")
 
-    NUM = 1225
-    CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
-    MODEL_PATH = f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{NUM}.pth"
+    DEVICE="cuda"
+    # NUM = 1225
+    # CONFIG_PATH = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json"
+    # MODEL_PATH = f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{NUM}.pth"
+    NUM = 1271
+    CONFIG_PATH = "/mnt/storage/kocharyan/q_ruslan/configs/44k/config.json"
+    MODEL_PATH = f"/mnt/storage/kocharyan/q_ruslan/logs/44k/G_{NUM}.pth"
+
     OUT_DIR = "examples/res/"
     bp = "../../NIR/RuDevices/2/b/"
-    INPUT = [bp+'dd9262b6-bb56-4ffa-9458-2790458ce27e.wav'] #"скачок который видел в начале графика"
-    text = ["падение который видел в конце графика"] #["совсем скоро я увижу отца"] #
+    INPUT = [bp+'dd9262b6-bb56-4ffa-9458-2790458ce27e.wav'] # "скачок который видел в начале графика"
+    text = ["падение который видел в конце графика"]
 
     vc = ConcatVCInfer(
         model_path=MODEL_PATH, conf_path=CONFIG_PATH, 
-        auto_predict_f0=True, device="cuda", cluster_infer_ratio=0.,
-        cluster_path="../../NIR/ruslan_content_clusters/clusters_10000.pt",
-        database="../../NIR/ruslan_word_database/"
+        auto_predict_f0=False, f0_method="crepe",
+        device=DEVICE, cluster_infer_ratio=1.,
+        cluster_path="../../NIR/ruslan_content_clusters/clusters_250.pt",
+        database="../../NIR/ruslan_word_database/",
     )
     vc.svc_model = ConcatVC(
             net_g_path=MODEL_PATH, 
             config_path=CONFIG_PATH, 
-            device="cuda",
+            device=DEVICE,
             )
     vc.inference(
             input_paths=INPUT, output_dir=OUT_DIR, speaker=None, # т.к. число speaker = 1
