@@ -2,6 +2,7 @@ from typing import *
 from pathlib import Path
 import json
 from tqdm import tqdm
+from copy import deepcopy
 
 from joblib import Parallel, delayed, cpu_count
 import librosa
@@ -204,11 +205,12 @@ class Text2SemanticCode(Dataset):
 
     def multiproc_labeling(self, n_jobs, save_to):
         def _batch_labling(chunk, pbar): #TODO: Переделать (нужно передавать заданный батч)
+            cluster_model = deepcopy(self.semantic_codes_clusters)
             for i in tqdm(chunk, position=pbar):
                 content = torch.load(self.contents[i], weights_only=True)
-                content = content["content"].squeeze(0).numpy().T
-                preds = self.semantic_codes_clusters.predict_cluster_center(content)
-                preds = self.semantic_codes_clusters.encode(preds)
+                content = content["content"].squeeze(0).numpy()#.T
+                preds = cluster_model.predict_cluster_center(content)
+                preds = cluster_model.encode(preds)
                 fname = Path(self.contents[i]).name + '.label'
                 content_path = Path(save_to) / fname
                 with content_path.open("wb") as f:

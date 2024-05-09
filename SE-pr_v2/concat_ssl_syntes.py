@@ -373,7 +373,7 @@ if __name__ == "__main__":
     OUT_DIR = "examples/res/"
     bp = "../../NIR/RuDevices/2/b/"
     INPUT = [bp+'dd9262b6-bb56-4ffa-9458-2790458ce27e.wav'] # "скачок который видел в начале графика"
-    text = ["падение который видел в конце графика"]
+    text = ["которое видел в начале графика"]
 
     vc = ConcatVCInfer(
         model_path=MODEL_PATH, conf_path=CONFIG_PATH, 

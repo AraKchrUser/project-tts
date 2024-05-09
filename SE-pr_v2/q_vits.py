@@ -314,4 +314,5 @@ if __name__ == "__main__":
         vc.inference(input_paths=INPUT, output_dir=OUT_DIR, speaker=None)
     
     if args.speech_edit:
+        # См. rnn_seq2seq.py `args.inference:`
         pass

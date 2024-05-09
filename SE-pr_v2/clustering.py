@@ -32,7 +32,8 @@ def incremental_clustering(input_path_dir: Union[Path, str], out_path_file: Unio
                 with data_path.open("rb") as file:
                     content = (
                         torch.load(file, weights_only=True)["content"]
-                        ).squeeze(0).numpy().T # TODO: load form disk
+                        ).squeeze(0).numpy() # TODO: load form disk .T
+                    # print(content.shape)
                     feats.append(content)
             feats = np.concatenate(feats, axis=0).astype(np.float32)
             # print(f"hubert contents shape: {feats.shape}, {feats.nbytes / 1024 / 1024:.2f} MB") #TODO:make increments
@@ -158,15 +159,15 @@ class PseudoPhonemes:
     
 
 if __name__ == "__main__":
-    # incremental_clustering(
-    #     "../../NIR/RuDevices_extracted_contents", "../../NIR/RuDevices_content_clusters/clusters_10000.pt",
-    #     n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt"
-    # )
-    # incremental_clustering(
-    #     "../../NIR/RuDevices_extracted_contents", "../../NIR/RuDevices_content_clusters/clusters_10000.pt",
-    #     n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt"
-    # )
     incremental_clustering(
-        "../../NIR/ruslan_contents/", "../../NIR/ruslan_content_clusters/clusters_250.pt",
+        "../../NIR/RuDevices_extracted_contents", "../../NIR/RuDevices_content_clusters/clusters_250.pt",
         n_clusters=250, batch_size=4096, data_pattern="*.content.pt",
     )
+    # incremental_clustering(
+    #     "../../NIR/RuDevices_extracted_contents", "../../NIR/RuDevices_content_clusters/clusters_10000.pt",
+    #     n_clusters=10_000, batch_size=4096, data_pattern="*.content.pt"
+    # )
+    # incremental_clustering(
+    #     "../../NIR/ruslan_contents/", "../../NIR/ruslan_content_clusters/clusters_250.pt",
+    #     n_clusters=250, batch_size=4096, data_pattern="*.content.pt",
+    # )
