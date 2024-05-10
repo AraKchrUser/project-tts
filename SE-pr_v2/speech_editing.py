@@ -1,31 +1,126 @@
 from string import punctuation
+from pprint import pprint
+
+import torch
 
 from models import WhisperX
+from calc_content import get_hubert_model, calc_hubert_content, _one_item_hubert_infer
+from cutils import wip_memory
+from concat_ssl_syntes import ConcatVCInfer
+from rnn_seq2seq import QVITSCustomContentInfer
 
 
 class SpeechEditor:
-    def __init__(self) -> None:
-        self.whisperx_model = WhisperX()
+    def __init__(self, device='cpu', predict_w=False, db_path='', f0_method="dio", predict_f0=False) -> None:
+        self.device = device
+
+        c_type = "float16" if self.device == 'cuda' else "float32"
+        self.whisperx_model = WhisperX(device=self.device, compute_type=c_type)
+        self.hubert_model = get_hubert_model(
+            conf="/mnt/storage/kocharyan/hfmodels/content-vec-best",
+            device=self.device, final_proj=True,
+        )
+        self.hubert_hps = {
+            "data_sr": 16_000, "hop_len": 512, 
+            "f0_method": "dio", "device": self.device,
+            }
+        
+        # num = 1271
+        # m_path = f"/mnt/storage/kocharyan/q_ruslan/logs/44k/G_{num}.pth"
+        # conf = "/mnt/storage/kocharyan/q_ruslan/configs/44k/config.json"
+        num = 1225
+        m_path = f"/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/logs/44k/G_{num}.pth"
+        conf = "/mnt/storage/kocharyan/so-vits-svc-fork/ruslana/configs/44k/config.json" 
+        self.qvits = QVITSCustomContentInfer(
+            model_path=m_path, conf_path=conf,
+            device=self.device, auto_predict_f0=predict_f0, 
+            f0_method=f0_method, cluster_path='',
+        )
+        
+        self.predict_w = predict_w
+        self.db_path = db_path
+        
         return
     
-    def editing(self, src_text, tgt_text, audio_path):
+    def infer_vc(self, content: torch.tensor, audio_path: str, out_dir: str):
+        self.qvits.inference(
+            input_paths=audio_path, output_dir=out_dir, 
+            contents=content, speaker=None,
+            )
+    
+    def editing_content(self, src_text, tgt_text, audio_path):
+        
+        content = calc_hubert_content(
+            self.hubert_model, audio_path, 
+            self.device, None, None,
+        ).squeeze(0) # torch.Size([1, 256, 134])
+        # content = _one_item_hubert_infer(
+        #     audio_path, self.hubert_model, 
+        #     self.hubert_hps, return_data=True,
+        #     )["content"] # torch.Size([256, 84])
+        torch.cuda.empty_cache()
+        wip_memory(self.hubert_model)
+        
         audio = WhisperX.load_audio(audio_file=audio_path)
         out = self.whisperx_model(audio)
+        torch.cuda.empty_cache()
+        wip_memory(self.whisperx_model)
         alignment = WhisperX.postprocess_out(out, by='words')
         timesteps = WhisperX.formed_timesteps(alignment)
         if src_text is None:
             src_text = out['segments'][0]['text']
+        
         wer_info = SpeechEditor.levenshtein(src_text, tgt_text)
-        # ...
+        wer_ali = wer_info["ali"][2]
+        tgt_words = wer_info["recognized_words"]
+        src_words = wer_info["reference_words"]
 
-    def deleting(self):
-        pass
+        print(f"{content.shape=}")
+        pprint(wer_info)
+        pprint(timesteps)
 
-    def inserting(self):
-        pass
+        for i in range(len(wer_ali)):
+            
+            if wer_ali[i] == "S":
+                src_word = timesteps[i][0]
+                tgt_word = tgt_words[i]
+                content_idxs = [*timesteps[i][1]]
+                content = self.sub(tgt_word, content_idxs, content)
+            
+            if wer_ali[i] == "I":
+                content = self.inserting(content)
+            if wer_ali[i] == "D":
+                content = self.deleting(content)
 
-    def sub(self):
-        pass
+        return content
+
+    def deleting(self, content):
+        return content
+
+    def inserting(self, content):
+        return content
+
+    def sub(self, tgt_word, content_idxs, content):
+        if self.predict_w:
+            patch = self.predict_words(word=tgt_word)
+        else:
+            patch = self.get_words_from_db(word=tgt_word)
+         
+        # content[:, content_idxs] = patch
+        print(f"{patch.shape=}")
+        content = torch.concat([
+           content[:, :content_idxs[0]-1], 
+           patch.to(self.device), 
+           content[:, content_idxs[-1]+1:],
+        ], dim=-1) # [h, t]
+        return content
+
+    def predict_words(self, word):
+        raise NotImplementedError()
+
+    def get_words_from_db(self, word):
+        word = ConcatVCInfer.get_contents(self.db_path, word, "random")
+        return word
 
     @staticmethod
     def levenshtein(reference_text: str, recognized_text: str):
@@ -101,3 +196,18 @@ class SpeechEditor:
                 "reference_words": reference_words,
                 "recognized_words": recognized_words,
                 }
+
+
+
+
+if __name__ == "__main__": # Что то ломает модель, но не понятно, что 
+    db_path = "/mnt/storage/kocharyan/NIR/ruslan_word_database/"
+    # f0_method: crepe/dio/parselmouth/harvest/crepe-tiny
+    se = SpeechEditor(db_path=db_path, f0_method='crepe-tiny', predict_f0=True)
+    f = "../../NIR/RuDevices/2/b/dd9262b6-bb56-4ffa-9458-2790458ce27e.wav"
+    tgt = "скачок который видел в конце графика"#"падение который видел в конце графика"
+    src_text = "скачок который видел в начале графика" #None
+    content = se.editing_content(src_text=src_text, tgt_text=tgt, audio_path=f)
+    se.infer_vc(content, [f], "examples/res/")
+    print(content.shape)
+

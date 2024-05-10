@@ -398,6 +398,7 @@ class QVITSCustomContents(QVITS):
         print(_.shape, contents.shape)
         print("Replace the contents ....")
         c = contents
+        # c = _
         c = repeat_expand_2d(c.squeeze(0), f0.shape[1])
 
         c = c.unsqueeze(0)
@@ -464,8 +465,8 @@ if __name__ == "__main__":
     sr=16_000
     trainer = RNNTrainer(
         texts_path=texts_path, contents_path=contents_path, device="cuda",
-        clusters_path=clusters_path, sr=sr, labels_path=labels_path,
-        print_every=5, plot_every=5, n_epochs=10_000, ckpt_save_to="ckpts",
+        clusters_path=clusters_path, sr=sr, labels_path=labels_path, batch_size=1024,
+        print_every=1, plot_every=1, n_epochs=2_000, ckpt_save_to="ckpts_full",
     )
 
     if args.train:

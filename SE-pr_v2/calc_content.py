@@ -95,7 +95,7 @@ def calc_hubert_content(model: HubertModel,
     return contents.transpose(1, 2)
 
 
-def _one_item_hubert_infer(file, hubert_model, hps, return_data=False):
+def _one_item_hubert_infer(file, hubert_model, hps, interpolate=False, return_data=False):
     '''Вычисление контент-векторов для файла и сохранение'''
 
     def content_interpolate(content: torch.Tensor, tgt_len: int):
@@ -125,7 +125,9 @@ def _one_item_hubert_infer(file, hubert_model, hps, return_data=False):
 
     # interpolate 
     # print(f"src, {content.shape=} {f0.shape=}")
-    content = content_interpolate(content.squeeze(0), f0.shape[0])
+    # Возможно не стоит этого делать во время создания базы слов
+    if interpolate:
+        content = content_interpolate(content.squeeze(0), f0.shape[0])
     # print(f"tgt, {content.shape=} {f0.shape=}")
     length = min(f0.shape[0], content.shape[1])
     f0, content = f0[:length], content[:, :length]
