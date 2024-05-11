@@ -43,6 +43,7 @@ class SpeechEditor:
         return
     
     def infer_vc(self, content: torch.tensor, audio_path: str, out_dir: str):
+        # TODO: сделать `c = cluster_infer_ratio * cluster_c + (1 - cluster_infer_ratio) * c` ?
         self.qvits.inference(
             input_paths=audio_path, output_dir=out_dir, 
             contents=content, speaker=None,
@@ -67,6 +68,8 @@ class SpeechEditor:
         wip_memory(self.whisperx_model)
         alignment = WhisperX.postprocess_out(out, by='words')
         timesteps = WhisperX.formed_timesteps(alignment)
+        self.offset = 0
+
         if src_text is None:
             src_text = out['segments'][0]['text']
         
@@ -79,25 +82,54 @@ class SpeechEditor:
         pprint(wer_info)
         pprint(timesteps)
 
+        # Пока только 1 операция возможна на все аудио 
+        # Нужно научится обновлять индексы в timesteps 
+        oper_cnt = 0
         for i in range(len(wer_ali)):
+
+            if oper_cnt > 0:
+                continue
             
             if wer_ali[i] == "S":
                 src_word = timesteps[i][0]
                 tgt_word = tgt_words[i]
                 content_idxs = [*timesteps[i][1]]
                 content = self.sub(tgt_word, content_idxs, content)
+                oper_cnt += 1
             
             if wer_ali[i] == "I":
-                content = self.inserting(content)
+                # Тут надо аккуратно проверить:
+                left = [*timesteps[i - 1][1]][-1] if i > 0 else 0
+                right = [*timesteps[i][1]][0] if i < len(wer_ali) - 1 else len(wer_ali) - 1
+                tgt_word = tgt_words[i]
+                content = self.inserting(tgt_word, left, right, content)
+                oper_cnt += 1
+            
             if wer_ali[i] == "D":
-                content = self.deleting(content)
+                content_idxs = [*timesteps[i][1]]
+                content = self.deleting(content, content_idxs)
+                oper_cnt += 1
 
         return content
 
-    def deleting(self, content):
+    def deleting(self, content, content_idxs):
+        content = torch.concat([
+           content[:, :content_idxs[0]],
+           content[:, content_idxs[-1]:],
+        ], dim=-1)
         return content
 
-    def inserting(self, content):
+    def inserting(self, tgt_word, left, right, content):
+        if self.predict_w:
+            patch = self.predict_words(word=tgt_word)
+        else:
+            patch = self.get_words_from_db(word=tgt_word)
+        print(f"{content.shape=}, {patch.shape=} {left=}, {right=}")
+        content = torch.concat([
+           content[:, :left], 
+           patch.to(self.device), 
+           content[:, right:],
+        ], dim=-1) # [h, t]
         return content
 
     def sub(self, tgt_word, content_idxs, content):
@@ -187,7 +219,7 @@ class SpeechEditor:
         ali[2] = ali[2][::-1]
         assert len(ali[0]) == len(ali[1]) == len(ali[2]), f"wrong ali {ali}"
         
-        return {"wer" : wer,
+        return {"wer": wer,
                 "cor": correct, 
                 "del": deletion,
                 "ins": insertion,
@@ -203,9 +235,11 @@ class SpeechEditor:
 if __name__ == "__main__": # Что то ломает модель, но не понятно, что 
     db_path = "/mnt/storage/kocharyan/NIR/ruslan_word_database/"
     # f0_method: crepe/dio/parselmouth/harvest/crepe-tiny
-    se = SpeechEditor(db_path=db_path, f0_method='crepe-tiny', predict_f0=True)
+    se = SpeechEditor(db_path=db_path, f0_method='crepe', predict_f0=True)
     f = "../../NIR/RuDevices/2/b/dd9262b6-bb56-4ffa-9458-2790458ce27e.wav"
-    tgt = "скачок который видел в конце графика"#"падение который видел в конце графика"
+    # tgt = "скачок который видел в конце графика" #"падение который видел в конце графика"
+    # tgt = "который видел в начале графика"
+    tgt = "скачок который отец видел в начале графика" # я/он/друг/отец
     src_text = "скачок который видел в начале графика" #None
     content = se.editing_content(src_text=src_text, tgt_text=tgt, audio_path=f)
     se.infer_vc(content, [f], "examples/res/")
